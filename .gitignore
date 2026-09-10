@@ -64,6 +64,7 @@ htmlcov/
 # Machine Learning & Deep Learning Artifacts
 # =============================================================================
 *.pt
+!models/water_seg_best.pt
 *.pth
 *.bin
 *.onnx
