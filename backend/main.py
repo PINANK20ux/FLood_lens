@@ -3,11 +3,12 @@ import glob
 import json
 import uuid
 import math
+import asyncio
 from datetime import datetime, timezone
 import cv2
 import torch
 import numpy as np
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
@@ -499,9 +500,15 @@ def detect_cameras():
             cap.release()
     return {"available_devices": found}
 
+@app.get("/api/webcam/device")
+@app.post("/api/webcam/device")
+def set_webcam_device(index: int = 0):
+    return {"status": "ok", "device_index": index}
+
 @app.get("/api/cameras/CAM06/stream")
-def stream_cam06(device_index: int = 0):
-    def gen():
+@app.get("/api/cameras/CAM06/infer")
+async def stream_cam06(request: Request, device_index: int = 0):
+    async def gen():
         cap = cv2.VideoCapture(device_index, cv2.CAP_DSHOW)
         if not cap.isOpened():
             cap = cv2.VideoCapture(device_index)
@@ -510,9 +517,12 @@ def stream_cam06(device_index: int = 0):
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
         try:
             while True:
+                if await request.is_disconnected():
+                    break
                 ret, frame = cap.read()
                 if not ret or frame is None:
-                    break
+                    await asyncio.sleep(0.01)
+                    continue
                 annotated, depth_cm, submersion_pct, status, passability = process_frame_full(frame)
                 TELEMETRY_CACHE["CAM06"] = {
                     "cam_id": "CAM06",
@@ -524,6 +534,7 @@ def stream_cam06(device_index: int = 0):
                 _, buf = cv2.imencode('.jpg', annotated, [int(cv2.IMWRITE_JPEG_QUALITY), 65])
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + buf.tobytes() + b'\r\n')
+                await asyncio.sleep(0.01)
         finally:
             cap.release()
             print("--> Webcam released cleanly")
