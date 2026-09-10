@@ -1,0 +1,629 @@
+{
+  "stats": {
+    "total": 8,
+    "safe": 4,
+    "caution": 2,
+    "blocked": 2
+  },
+  "geojson": {
+    "type": "FeatureCollection",
+    "features": [
+      {
+        "type": "Feature",
+        "properties": {
+          "id": "minto_underpass",
+          "road_id": "minto_underpass",
+          "name": "Minto Bridge Underpass",
+          "status": "BLOCKED",
+          "depth_cm": 62,
+          "submersion_pct": 85,
+          "submersion_ratio": 85,
+          "length_m": 650,
+          "elevation_sink": true,
+          "coords": [
+            [
+              28.6358,
+              77.2212
+            ],
+            [
+              28.635,
+              77.2235
+            ],
+            [
+              28.6342,
+              77.2255
+            ],
+            [
+              28.6334,
+              77.2272
+            ],
+            [
+              28.633,
+              77.2295
+            ],
+            [
+              28.6328,
+              77.2325
+            ],
+            [
+              28.6326,
+              77.2355
+            ]
+          ],
+          "latlngs": [
+            [
+              28.6358,
+              77.2212
+            ],
+            [
+              28.635,
+              77.2235
+            ],
+            [
+              28.6342,
+              77.2255
+            ],
+            [
+              28.6334,
+              77.2272
+            ],
+            [
+              28.633,
+              77.2295
+            ],
+            [
+              28.6328,
+              77.2325
+            ],
+            [
+              28.6326,
+              77.2355
+            ]
+          ]
+        },
+        "geometry": {
+          "type": "LineString",
+          "coordinates": [
+            [
+              77.2212,
+              28.6358
+            ],
+            [
+              77.2235,
+              28.635
+            ],
+            [
+              77.2255,
+              28.6342
+            ],
+            [
+              77.2272,
+              28.6334
+            ],
+            [
+              77.2295,
+              28.633
+            ],
+            [
+              77.2325,
+              28.6328
+            ],
+            [
+              77.2355,
+              28.6326
+            ]
+          ]
+        }
+      },
+      {
+        "type": "Feature",
+        "properties": {
+          "id": "tilak_bridge_rail_underpass",
+          "road_id": "tilak_bridge_rail_underpass",
+          "name": "Tilak Bridge Railway Underpass",
+          "status": "BLOCKED",
+          "depth_cm": 50,
+          "submersion_pct": 70,
+          "submersion_ratio": 70,
+          "length_m": 720,
+          "elevation_sink": true,
+          "coords": [
+            [
+              28.6272,
+              77.237
+            ],
+            [
+              28.626,
+              77.2405
+            ],
+            [
+              28.6255,
+              77.2435
+            ]
+          ],
+          "latlngs": [
+            [
+              28.6272,
+              77.237
+            ],
+            [
+              28.626,
+              77.2405
+            ],
+            [
+              28.6255,
+              77.2435
+            ]
+          ]
+        },
+        "geometry": {
+          "type": "LineString",
+          "coordinates": [
+            [
+              77.237,
+              28.6272
+            ],
+            [
+              77.2405,
+              28.626
+            ],
+            [
+              77.2435,
+              28.6255
+            ]
+          ]
+        }
+      },
+      {
+        "type": "Feature",
+        "properties": {
+          "id": "kg_marg_waterlog",
+          "road_id": "kg_marg_waterlog",
+          "name": "Kasturba Gandhi Marg",
+          "status": "CAUTION",
+          "depth_cm": 22,
+          "submersion_pct": 41,
+          "submersion_ratio": 41,
+          "length_m": 1400,
+          "elevation_sink": true,
+          "coords": [
+            [
+              28.6318,
+              77.221
+            ],
+            [
+              28.6292,
+              77.2222
+            ],
+            [
+              28.6265,
+              77.2235
+            ],
+            [
+              28.6225,
+              77.2252
+            ],
+            [
+              28.6185,
+              77.2268
+            ]
+          ],
+          "latlngs": [
+            [
+              28.6318,
+              77.221
+            ],
+            [
+              28.6292,
+              77.2222
+            ],
+            [
+              28.6265,
+              77.2235
+            ],
+            [
+              28.6225,
+              77.2252
+            ],
+            [
+              28.6185,
+              77.2268
+            ]
+          ]
+        },
+        "geometry": {
+          "type": "LineString",
+          "coordinates": [
+            [
+              77.221,
+              28.6318
+            ],
+            [
+              77.2222,
+              28.6292
+            ],
+            [
+              77.2235,
+              28.6265
+            ],
+            [
+              77.2252,
+              28.6225
+            ],
+            [
+              77.2268,
+              28.6185
+            ]
+          ]
+        }
+      },
+      {
+        "type": "Feature",
+        "properties": {
+          "id": "mandi_house_roundabout",
+          "road_id": "mandi_house_roundabout",
+          "name": "Sikandra Road & Mandi House",
+          "status": "CAUTION",
+          "depth_cm": 18,
+          "submersion_pct": 31,
+          "submersion_ratio": 31,
+          "length_m": 900,
+          "elevation_sink": true,
+          "coords": [
+            [
+              28.6258,
+              77.2315
+            ],
+            [
+              28.626,
+              77.2345
+            ],
+            [
+              28.625,
+              77.239
+            ]
+          ],
+          "latlngs": [
+            [
+              28.6258,
+              77.2315
+            ],
+            [
+              28.626,
+              77.2345
+            ],
+            [
+              28.625,
+              77.239
+            ]
+          ]
+        },
+        "geometry": {
+          "type": "LineString",
+          "coordinates": [
+            [
+              77.2315,
+              28.6258
+            ],
+            [
+              77.2345,
+              28.626
+            ],
+            [
+              77.239,
+              28.625
+            ]
+          ]
+        }
+      },
+      {
+        "type": "Feature",
+        "properties": {
+          "id": "kartavya_path",
+          "road_id": "kartavya_path",
+          "name": "Kartavya Path (Rajpath)",
+          "status": "SAFE",
+          "depth_cm": 0,
+          "submersion_pct": 0,
+          "submersion_ratio": 0,
+          "length_m": 2900,
+          "elevation_sink": false,
+          "coords": [
+            [
+              28.6145,
+              77.2005
+            ],
+            [
+              28.614,
+              77.2065
+            ],
+            [
+              28.6135,
+              77.214
+            ],
+            [
+              28.613,
+              77.2215
+            ],
+            [
+              28.6125,
+              77.2295
+            ]
+          ],
+          "latlngs": [
+            [
+              28.6145,
+              77.2005
+            ],
+            [
+              28.614,
+              77.2065
+            ],
+            [
+              28.6135,
+              77.214
+            ],
+            [
+              28.613,
+              77.2215
+            ],
+            [
+              28.6125,
+              77.2295
+            ]
+          ]
+        },
+        "geometry": {
+          "type": "LineString",
+          "coordinates": [
+            [
+              77.2005,
+              28.6145
+            ],
+            [
+              77.2065,
+              28.614
+            ],
+            [
+              77.214,
+              28.6135
+            ],
+            [
+              77.2215,
+              28.613
+            ],
+            [
+              77.2295,
+              28.6125
+            ]
+          ]
+        }
+      },
+      {
+        "type": "Feature",
+        "properties": {
+          "id": "india_gate_hexagon",
+          "road_id": "india_gate_hexagon",
+          "name": "India Gate Hexagon Circle",
+          "status": "SAFE",
+          "depth_cm": 0,
+          "submersion_pct": 0,
+          "submersion_ratio": 0,
+          "length_m": 1600,
+          "elevation_sink": false,
+          "coords": [
+            [
+              28.6145,
+              77.228
+            ],
+            [
+              28.614,
+              77.2315
+            ],
+            [
+              28.6125,
+              77.2325
+            ],
+            [
+              28.611,
+              77.2305
+            ],
+            [
+              28.6115,
+              77.2275
+            ],
+            [
+              28.6135,
+              77.227
+            ],
+            [
+              28.6145,
+              77.228
+            ]
+          ],
+          "latlngs": [
+            [
+              28.6145,
+              77.228
+            ],
+            [
+              28.614,
+              77.2315
+            ],
+            [
+              28.6125,
+              77.2325
+            ],
+            [
+              28.611,
+              77.2305
+            ],
+            [
+              28.6115,
+              77.2275
+            ],
+            [
+              28.6135,
+              77.227
+            ],
+            [
+              28.6145,
+              77.228
+            ]
+          ]
+        },
+        "geometry": {
+          "type": "LineString",
+          "coordinates": [
+            [
+              77.228,
+              28.6145
+            ],
+            [
+              77.2315,
+              28.614
+            ],
+            [
+              77.2325,
+              28.6125
+            ],
+            [
+              77.2305,
+              28.611
+            ],
+            [
+              77.2275,
+              28.6115
+            ],
+            [
+              77.227,
+              28.6135
+            ],
+            [
+              77.228,
+              28.6145
+            ]
+          ]
+        }
+      },
+      {
+        "type": "Feature",
+        "properties": {
+          "id": "ashoka_road",
+          "road_id": "ashoka_road",
+          "name": "Ashoka Road (Windsor Place toward India Gate)",
+          "status": "SAFE",
+          "depth_cm": 0,
+          "submersion_pct": 0,
+          "submersion_ratio": 0,
+          "length_m": 1450,
+          "elevation_sink": false,
+          "coords": [
+            [
+              28.619,
+              77.214
+            ],
+            [
+              28.616,
+              77.222
+            ],
+            [
+              28.6135,
+              77.227
+            ]
+          ],
+          "latlngs": [
+            [
+              28.619,
+              77.214
+            ],
+            [
+              28.616,
+              77.222
+            ],
+            [
+              28.6135,
+              77.227
+            ]
+          ]
+        },
+        "geometry": {
+          "type": "LineString",
+          "coordinates": [
+            [
+              77.214,
+              28.619
+            ],
+            [
+              77.222,
+              28.616
+            ],
+            [
+              77.227,
+              28.6135
+            ]
+          ]
+        }
+      },
+      {
+        "type": "Feature",
+        "properties": {
+          "id": "akbar_road",
+          "road_id": "akbar_road",
+          "name": "Akbar Road (Teen Murti to India Gate)",
+          "status": "SAFE",
+          "depth_cm": 0,
+          "submersion_pct": 0,
+          "submersion_ratio": 0,
+          "length_m": 2800,
+          "elevation_sink": false,
+          "coords": [
+            [
+              28.601,
+              77.202
+            ],
+            [
+              28.608,
+              77.218
+            ],
+            [
+              28.6125,
+              77.228
+            ]
+          ],
+          "latlngs": [
+            [
+              28.601,
+              77.202
+            ],
+            [
+              28.608,
+              77.218
+            ],
+            [
+              28.6125,
+              77.228
+            ]
+          ]
+        },
+        "geometry": {
+          "type": "LineString",
+          "coordinates": [
+            [
+              77.202,
+              28.601
+            ],
+            [
+              77.218,
+              28.608
+            ],
+            [
+              77.228,
+              28.6125
+            ]
+          ]
+        }
+      }
+    ]
+  }
+}

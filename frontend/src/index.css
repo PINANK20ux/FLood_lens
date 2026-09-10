@@ -1,0 +1,174 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ━━━ FloodLens Reference Design System ━━━ */
+
+:root {
+  --font-display: "Fraunces", "Georgia", serif;
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  /* Ink — deep slate, not pure black */
+  --color-ink-950: #0d1420;
+  --color-ink-900: #121b29;
+  --color-ink-800: #1a2536;
+  --color-ink-700: #24334a;
+  --color-ink-600: #33465f;
+  --color-ink-500: #4a5f7a;
+  --color-ink-400: #71879e;
+  --color-ink-300: #a3b3c4;
+
+  /* Paper — warm cream surfaces */
+  --color-paper-50: #fbfaf6;
+  --color-paper-100: #f5f2ea;
+  --color-paper-200: #ece6d8;
+  --color-paper-300: #ddd4bf;
+
+  /* Channel — the water/brand accent, a deep working teal */
+  --color-channel-900: #093a3e;
+  --color-channel-700: #0f6367;
+  --color-channel-600: #167f82;
+  --color-channel-500: #1f9a97;
+  --color-channel-400: #4db8b0;
+  --color-channel-300: #8ad4c9;
+  --color-channel-100: #e2f3ee;
+
+  /* Risk semantics */
+  --color-risk-clear: #2f8f5b;
+  --color-risk-clear-soft: #e4f3ea;
+  --color-risk-caution: #c98a2c;
+  --color-risk-caution-soft: #f8ecd7;
+  --color-risk-severe: #b3402f;
+  --color-risk-severe-soft: #f6e2de;
+
+  --shadow-panel: 0 1px 2px rgba(13, 20, 32, 0.06), 0 12px 32px -12px rgba(13, 20, 32, 0.25);
+  --shadow-float: 0 2px 6px rgba(13, 20, 32, 0.12), 0 8px 24px -8px rgba(13, 20, 32, 0.2);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+  font-family: var(--font-sans);
+  background: var(--color-paper-100);
+  color: var(--color-ink-900);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--color-channel-300);
+  color: var(--color-ink-950);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-channel-600);
+  outline-offset: 2px;
+}
+
+/* ━━━ Leaflet Overrides & Smooth Map Styles ━━━ */
+
+.leaflet-container {
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  font-family: var(--font-sans);
+}
+
+.leaflet-control-zoom {
+  border: none !important;
+  box-shadow: var(--shadow-float) !important;
+  border-radius: 9999px !important;
+  overflow: hidden;
+}
+
+.leaflet-control-zoom a {
+  background: #ffffff !important;
+  color: var(--color-ink-900) !important;
+  border: 1px solid rgba(13, 20, 32, 0.08) !important;
+}
+
+.leaflet-popup-content-wrapper {
+  border-radius: 1rem !important;
+  box-shadow: var(--shadow-panel) !important;
+  font-family: var(--font-sans) !important;
+  background: #ffffff !important;
+  border: 1px solid rgba(13, 20, 32, 0.08) !important;
+}
+
+.leaflet-popup-tip {
+  box-shadow: 0 2px 6px rgba(13, 20, 32, 0.1) !important;
+}
+
+/* ━━━ Reference Inputs & Buttons ━━━ */
+
+.input {
+  width: 100%;
+  border: 1px solid rgba(13, 20, 32, 0.12);
+  border-radius: 0.75rem;
+  padding: 0.65rem 0.85rem;
+  font-size: 0.875rem;
+  color: var(--color-ink-900);
+  background: var(--color-paper-50);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.input:focus {
+  border-color: var(--color-channel-500);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(31, 154, 151, 0.15);
+}
+
+/* ━━━ Animations ━━━ */
+
+@keyframes pulse-ring {
+  0% { transform: scale(0.8); opacity: 0.7; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+
+.locate-pulse::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: var(--color-channel-500);
+  animation: pulse-ring 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.25s ease-out both;
+}
+
+/* ━━━ Custom Scrollbar ━━━ */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(13, 20, 32, 0.15);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(13, 20, 32, 0.28);
+}
