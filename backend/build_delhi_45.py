@@ -3,7 +3,7 @@ import json
 blocked_segments = [
     {
         "id": "delhi_minto_underpass",
-        "name": "Minto Bridge Underpass Corridor",
+        "name": "Minto Bridge Underpass Corridcor",
         "status": "BLOCKED",
         "depth_cm": 62,
         "submersion_pct": 85,
