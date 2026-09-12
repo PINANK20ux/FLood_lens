@@ -8,6 +8,10 @@ import {
   ACTIVE_SAFE_ROUTE,
   DELHI_ROAD_STATS,
   DELHI_INITIAL_DATASET,
+  DELHI_EMERGENCY_ALERTS,
+  DELHI_RESPONSE_UNITS,
+  DELHI_ADMIN_REPORTS,
+  DELHI_ADMIN_LOGS,
 } from "../data/delhiMockData";
 
 export const API = "http://localhost:8000";
@@ -219,8 +223,15 @@ const FloodLensContext = createContext(null);
 export function FloodLensProvider({ children }) {
   const [roads, setRoads] = useState(DELHI_INITIAL_DATASET);
   const [cameras, setCameras] = useState(DELHI_CAMERAS);
-  const [reports, setReports] = useState([]);
+  const [reports, setReports] = useState(DELHI_ADMIN_REPORTS.filter(r => r.public_visible));
   const [error, setError] = useState(null);
+
+  // Authority & Operations State
+  const [adminReports, setAdminReports] = useState(DELHI_ADMIN_REPORTS);
+  const [emergencyAlerts, setEmergencyAlerts] = useState(DELHI_EMERGENCY_ALERTS);
+  const [responseUnits, setResponseUnits] = useState(DELHI_RESPONSE_UNITS);
+  const [adminLogs, setAdminLogs] = useState(DELHI_ADMIN_LOGS);
+  const [roadOverrides, setRoadOverrides] = useState({});
 
   // Demo Flood Simulation Mode
   const [demoMode, setDemoMode] = useState(false);
@@ -333,14 +344,47 @@ export function FloodLensProvider({ children }) {
     }
   }, []);
 
+  // Authority Data Sync Function
+  const fetchAdminData = useCallback(async () => {
+    try {
+      const [rpts, alerts, units, logs, ovs] = await Promise.allSettled([
+        apiFetch("/api/admin/reports"),
+        apiFetch("/api/admin/alerts"),
+        apiFetch("/api/admin/units"),
+        apiFetch("/api/admin/logs"),
+        apiFetch("/api/admin/roads/overrides"),
+      ]);
+      if (rpts.status === "fulfilled" && rpts.value?.reports) {
+        setAdminReports(rpts.value.reports);
+        const pub = rpts.value.reports.filter(r => r.public_visible || ["verified", "dispatched"].includes(r.status));
+        setReports(pub);
+      }
+      if (alerts.status === "fulfilled" && alerts.value?.alerts) {
+        setEmergencyAlerts(alerts.value.alerts);
+      }
+      if (units.status === "fulfilled" && units.value?.units) {
+        setResponseUnits(units.value.units);
+      }
+      if (logs.status === "fulfilled" && logs.value?.logs) {
+        setAdminLogs(logs.value.logs);
+      }
+      if (ovs.status === "fulfilled" && ovs.value?.overrides) {
+        setRoadOverrides(ovs.value.overrides);
+      }
+    } catch (e) {
+      console.warn("Authority data sync notice:", e);
+    }
+  }, []);
+
   // Initial Data Fetch with Bulletproof Self-Contained Delhi Fallback
   const fetchInitialData = useCallback(async () => {
     try {
       setError(null);
-      const [roadsRes, camerasRes, reportsRes] = await Promise.allSettled([
+      const [roadsRes, camerasRes, reportsRes, alertsRes] = await Promise.allSettled([
         apiFetch("/api/roads"),
         apiFetch("/api/cameras"),
         apiFetch("/api/reports"),
+        apiFetch("/api/alerts"),
       ]);
 
       if (
@@ -367,12 +411,19 @@ export function FloodLensProvider({ children }) {
       if (reportsRes.status === "fulfilled" && reportsRes.value?.reports) {
         setReports(reportsRes.value.reports);
       }
+
+      if (alertsRes.status === "fulfilled" && alertsRes.value?.alerts) {
+        setEmergencyAlerts(alertsRes.value.alerts);
+      }
+
+      // Also trigger admin sync
+      fetchAdminData();
     } catch (e) {
       console.warn("Initial fetch notice, maintaining Delhi static dataset:", e);
       setRoads(DELHI_INITIAL_DATASET);
       setCameras(DELHI_CAMERAS);
     }
-  }, [selectedCamera, demoMode]);
+  }, [selectedCamera, demoMode, fetchAdminData]);
 
   useEffect(() => {
     fetchInitialData();
@@ -560,8 +611,8 @@ export function FloodLensProvider({ children }) {
     setRouteError(null);
   };
 
-  // Submit Citizen Report with YOLO AI validation
-  const submitCitizenReport = async ({ lat, lng, water_level, image_base64 }) => {
+  // Submit Citizen Report with YOLO AI validation & Privacy Blurring
+  const submitCitizenReport = async ({ lat, lng, water_level, image_base64, reason, road_name }) => {
     setReportSubmitting(true);
     setReportFeedback(null);
 
@@ -573,17 +624,18 @@ export function FloodLensProvider({ children }) {
           lng: Number(lng),
           water_level: water_level || "moderate",
           image_base64: image_base64 || null,
+          reason: reason || null,
+          road_name: road_name || null,
         }),
       });
 
       setReportFeedback(data);
 
-      const [rpts, rds] = await Promise.all([
-        apiFetch("/api/reports"),
-        apiFetch("/api/roads"),
+      // Re-sync reports & admin queue
+      await Promise.allSettled([
+        fetchInitialData(),
+        fetchAdminData(),
       ]);
-      if (rpts?.reports) setReports(rpts.reports);
-      if (!demoMode && rds?.geojson) setRoads(rds);
 
       return data;
     } catch (e) {
@@ -595,6 +647,161 @@ export function FloodLensProvider({ children }) {
       throw e;
     } finally {
       setReportSubmitting(false);
+    }
+  };
+
+  // Authority Command Methods
+  const updateReportStatus = async (reportId, payload) => {
+    try {
+      const res = await apiFetch(`/api/admin/reports/${reportId}/status`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      if (res?.report) {
+        setAdminReports((prev) => prev.map((r) => (r.id === reportId ? res.report : r)));
+        setReports((prev) => {
+          const exists = prev.some((r) => r.id === reportId);
+          if (res.report.public_visible || ["verified", "dispatched"].includes(res.report.status)) {
+            return exists ? prev.map((r) => (r.id === reportId ? res.report : r)) : [res.report, ...prev];
+          } else {
+            return prev.filter((r) => r.id !== reportId);
+          }
+        });
+      }
+      await fetchAdminData();
+      return res;
+    } catch (e) {
+      console.error("Failed to update report status:", e);
+      setAdminReports((prev) =>
+        prev.map((r) => {
+          if (r.id === reportId) {
+            const updated = { ...r, ...payload };
+            if (payload.status === "verified" || payload.status === "dispatched") updated.public_visible = true;
+            if (payload.status === "dismissed") updated.public_visible = false;
+            return updated;
+          }
+          return r;
+        })
+      );
+    }
+  };
+
+  const reblurReport = async (reportId) => {
+    try {
+      const res = await apiFetch(`/api/admin/reports/${reportId}/blur`, { method: "POST" });
+      if (res?.report) {
+        setAdminReports((prev) => prev.map((r) => (r.id === reportId ? res.report : r)));
+      }
+      return res;
+    } catch (e) {
+      console.error("Reblur report failed:", e);
+    }
+  };
+
+  const broadcastEmergencyAlert = async ({ title, message, severity = "WARNING", affected_areas = [] }) => {
+    try {
+      const res = await apiFetch("/api/admin/alerts", {
+        method: "POST",
+        body: JSON.stringify({ title, message, severity, affected_areas }),
+      });
+      if (res?.alert) {
+        setEmergencyAlerts((prev) => [res.alert, ...prev]);
+      }
+      await fetchAdminData();
+      return res;
+    } catch (e) {
+      console.error("Broadcast alert notice, saving locally:", e);
+      const localAlert = {
+        id: `alert_${Date.now()}`,
+        title,
+        message,
+        severity: severity.toUpperCase(),
+        affected_areas,
+        active: true,
+        created_at: new Date().toISOString(),
+      };
+      setEmergencyAlerts((prev) => [localAlert, ...prev]);
+      return { status: "ok", alert: localAlert };
+    }
+  };
+
+  const deleteEmergencyAlert = async (alertId) => {
+    try {
+      await apiFetch(`/api/admin/alerts/${alertId}`, { method: "DELETE" });
+      setEmergencyAlerts((prev) => prev.filter((a) => a.id !== alertId));
+    } catch (e) {
+      setEmergencyAlerts((prev) => prev.filter((a) => a.id !== alertId));
+    }
+  };
+
+  const dispatchResponseUnit = async ({ unit_id, incident_id = null, sector = null, status = "DISPATCHED" }) => {
+    try {
+      const res = await apiFetch("/api/admin/units/dispatch", {
+        method: "POST",
+        body: JSON.stringify({ unit_id, incident_id, sector, status }),
+      });
+      if (res?.unit) {
+        setResponseUnits((prev) => prev.map((u) => (u.id === unit_id ? res.unit : u)));
+      }
+      await fetchAdminData();
+      return res;
+    } catch (e) {
+      console.error("Dispatch unit notice, applying locally:", e);
+      setResponseUnits((prev) =>
+        prev.map((u) => {
+          if (u.id === unit_id) {
+            return {
+              ...u,
+              status,
+              current_sector: sector || u.current_sector,
+              assigned_incident_id: incident_id || u.assigned_incident_id,
+            };
+          }
+          return u;
+        })
+      );
+    }
+  };
+
+  const overrideRoadSegment = async ({ road_id, status, depth_cm = 0, reason = "" }) => {
+    try {
+      const res = await apiFetch("/api/admin/roads/override", {
+        method: "POST",
+        body: JSON.stringify({ road_id, status, depth_cm, reason }),
+      });
+      if (res?.overrides) {
+        setRoadOverrides(res.overrides);
+      }
+      const roadsRes = await apiFetch("/api/roads");
+      if (roadsRes?.geojson) {
+        setRoads(roadsRes);
+      }
+      return res;
+    } catch (e) {
+      console.error("Road override notice, applying locally:", e);
+      setRoads((prev) => {
+        if (!prev?.geojson?.features) return prev;
+        const updatedFeatures = prev.geojson.features.map((f) => {
+          const id = f.properties?.id || f.properties?.road_id;
+          if (id === road_id) {
+            const sub_pct = Math.min(100, Math.round((depth_cm / 65.0) * 100));
+            return {
+              ...f,
+              properties: {
+                ...f.properties,
+                status: status.toUpperCase(),
+                depth_cm,
+                submersion_pct: sub_pct,
+                submersion_ratio: sub_pct,
+                override_active: true,
+                override_reason: reason || "Manual authority override",
+              },
+            };
+          }
+          return f;
+        });
+        return { ...prev, geojson: { ...prev.geojson, features: updatedFeatures } };
+      });
     }
   };
 
@@ -671,6 +878,22 @@ export function FloodLensProvider({ children }) {
     cameras,
     reports,
     error,
+    // Authority State & Actions
+    adminReports,
+    setAdminReports,
+    emergencyAlerts,
+    setEmergencyAlerts,
+    responseUnits,
+    setResponseUnits,
+    adminLogs,
+    roadOverrides,
+    fetchAdminData,
+    updateReportStatus,
+    reblurReport,
+    broadcastEmergencyAlert,
+    deleteEmergencyAlert,
+    dispatchResponseUnit,
+    overrideRoadSegment,
     // Demo Flood Simulation Mode
     demoMode,
     toggleDemoMode,

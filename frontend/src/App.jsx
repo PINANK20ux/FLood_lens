@@ -7,6 +7,7 @@ import RoadAccessibility from "./pages/RoadAccessibility";
 import SafeRoutes from "./pages/SafeRoutes";
 import CitizenHazards from "./pages/CitizenHazards";
 import About from "./pages/About";
+import AuthorityDashboard from "./pages/AuthorityDashboard";
 
 export default function App() {
   return (
@@ -20,6 +21,8 @@ export default function App() {
           <Route path="/video" element={<RoadAccessibility />} />
           <Route path="/hazards" element={<CitizenHazards />} />
           <Route path="/report" element={<CitizenHazards />} />
+          <Route path="/authority" element={<AuthorityDashboard />} />
+          <Route path="/admin" element={<AuthorityDashboard />} />
           <Route path="/about" element={<About />} />
           <Route path="/how-it-works" element={<Landing />} />
           <Route path="*" element={<Navigate to="/" replace />} />

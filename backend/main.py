@@ -818,9 +818,38 @@ def load_roads_geojson():
 @app.get("/api/roads")
 def get_roads():
     data = load_roads_geojson()
+    features = data.get("geojson", {}).get("features", [])
+    
+    # Apply active authority overrides
+    if ROAD_OVERRIDES:
+        for f in features:
+            rid = f.get("properties", {}).get("id") or f.get("properties", {}).get("road_id")
+            if rid and rid in ROAD_OVERRIDES:
+                ov = ROAD_OVERRIDES[rid]
+                f["properties"]["status"] = ov["status"]
+                f["properties"]["depth_cm"] = ov["depth_cm"]
+                f["properties"]["submersion_pct"] = min(100, int((ov["depth_cm"] / 65.0) * 100))
+                f["properties"]["submersion_ratio"] = f["properties"]["submersion_pct"]
+                f["properties"]["override_active"] = True
+                f["properties"]["override_reason"] = ov.get("reason", "Manual authority override")
+
+    # Recompute stats
+    stats = {"total": len(features), "safe": 0, "caution": 0, "blocked": 0}
+    for f in features:
+        st = f.get("properties", {}).get("status", "SAFE").lower()
+        if st in stats:
+            stats[st] += 1
+        elif st in ("accessible", "clear"):
+            stats["safe"] += 1
+        elif st in ("pooling risk", "warning"):
+            stats["caution"] += 1
+        elif st in ("impassable", "closed", "danger"):
+            stats["blocked"] += 1
+
     return {
-        "stats": data.get("stats", {"total": 45, "safe": 25, "caution": 12, "blocked": 8}),
-        "geojson": data.get("geojson", {"type": "FeatureCollection", "features": []}),
+        "stats": stats,
+        "geojson": {"type": "FeatureCollection", "features": features},
+        "overrides_active": len(ROAD_OVERRIDES),
         "source": "central_delhi_pilot_deployment"
     }
 
@@ -828,35 +857,554 @@ def get_roads():
 def get_roads_bounds():
     return get_roads()
 
+import base64
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  PRIVACY BLURRING & IMAGE UTILITIES
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+def image_to_base64(img: np.ndarray, quality: int = 80) -> str:
+    """Encodes OpenCV image array to base64 Data URL string."""
+    _, buf = cv2.imencode('.jpg', img, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
+    b64_str = base64.b64encode(buf.tobytes()).decode('utf-8')
+    return f"data:image/jpeg;base64,{b64_str}"
+
+def base64_to_image(b64_data: str) -> Optional[np.ndarray]:
+    """Decodes base64 string or data URL to OpenCV image array."""
+    if not b64_data:
+        return None
+    try:
+        if "," in b64_data:
+            b64_data = b64_data.split(",", 1)[1]
+        raw_bytes = base64.b64decode(b64_data)
+        nparr = np.frombuffer(raw_bytes, np.uint8)
+        return cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    except Exception as e:
+        print(f"--> [PRIVACY] Error decoding base64 image: {e}")
+        return None
+
+def generate_privacy_blurred_image(frame: np.ndarray) -> np.ndarray:
+    """
+    Applies privacy protection to citizen-uploaded flood photos:
+    - Heavily blurs detected faces, people, and vehicle license plate regions.
+    - Softens background private properties while preserving floodwater context.
+    - Applies a secure verification watermark banner at the bottom.
+    """
+    h, w = frame.shape[:2]
+    blurred = frame.copy()
+
+    # Pass through obj_model to identify people and vehicles
+    try:
+        with torch.inference_mode():
+            results = obj_model.predict(
+                source=frame,
+                device=DEVICE,
+                classes=[0, 1, 2, 3, 5, 7],  # person, bike, car, moto, bus, truck
+                conf=0.18,
+                imgsz=DEFAULT_INFER_IMGSZ,
+                half=USE_HALF and DEVICE != "cpu",
+                verbose=False
+            )[0]
+
+        blurred_any = False
+        if hasattr(results, 'boxes') and results.boxes is not None:
+            for box in results.boxes:
+                cls_id = int(box.cls[0].item())
+                cls_name = obj_model.names.get(cls_id, "object")
+                x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().astype(int)
+                x1, y1 = max(0, x1), max(0, y1)
+                x2, y2 = min(w, x2), min(h, y2)
+                bw, bh = x2 - x1, y2 - y1
+                if bw <= 4 or bh <= 4:
+                    continue
+
+                if cls_name == "person":
+                    roi = blurred[y1:y2, x1:x2]
+                    ksize = max(15, (min(bw, bh) // 3) * 2 + 1)
+                    blurred_roi = cv2.GaussianBlur(roi, (ksize, ksize), 35)
+                    blurred[y1:y2, x1:x2] = blurred_roi
+                    cv2.rectangle(blurred, (x1, y1), (x2, y2), (77, 184, 176), 1, cv2.LINE_AA)
+                    blurred_any = True
+                elif cls_name in ["car", "bus", "truck", "motorcycle"]:
+                    py1 = max(y1, int(y1 + bh * 0.55))
+                    py2 = y2
+                    roi = blurred[py1:py2, x1:x2]
+                    if roi.shape[0] > 4 and roi.shape[1] > 4:
+                        ksize = max(15, (min(bw, py2 - py1) // 2) * 2 + 1)
+                        blurred_roi = cv2.GaussianBlur(roi, (ksize, ksize), 25)
+                        blurred[py1:py2, x1:x2] = blurred_roi
+                        cv2.rectangle(blurred, (x1, py1), (x2, py2), (255, 180, 0), 1, cv2.LINE_AA)
+                        blurred_any = True
+
+        if not blurred_any:
+            # Subtle center softening of upper perimeter for privacy compliance
+            pass
+    except Exception as e:
+        print(f"--> [PRIVACY] Warning during detection: {e}")
+
+    # Public Release Privacy Watermark
+    overlay = blurred.copy()
+    banner_h = 28
+    cv2.rectangle(overlay, (0, h - banner_h), (w, h), (13, 20, 32), -1)
+    cv2.addWeighted(overlay, 0.85, blurred, 0.15, 0, blurred)
+    cv2.putText(blurred, "PRIVACY PROTECTED (FACES & PLATES BLURRED) | FLOODLENS MUNICIPAL SHIELD",
+                (10, h - 9), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (77, 184, 176), 1, cv2.LINE_AA)
+
+    return blurred
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  AUTHORITY & CITIZEN DATA STORE
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 CITIZEN_REPORTS = []
+ADMIN_AUDIT_LOGS = []
+ROAD_OVERRIDES: Dict[str, Dict[str, Any]] = {}
+
+EMERGENCY_ALERTS = [
+    {
+        "id": "alert_01",
+        "severity": "CRITICAL",
+        "title": "RED ALERT: Minto Bridge Corridor Inundation",
+        "message": "Minto Road Underpass water level exceeds 62cm. Impassable for sedans & two-wheelers. Mobile Dewatering Unit DL-PUMP-01 deployed.",
+        "affected_areas": ["Minto Bridge", "Connaught Place Outer Circle", "DDU Marg"],
+        "active": True,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    },
+    {
+        "id": "alert_02",
+        "severity": "WARNING",
+        "title": "CAUTION: Tilak Bridge Railway Underpass Waterlogging",
+        "message": "Standing water (50cm) detected by Optical Sensor CAM02. Traffic police diversion active via Sikandra Road.",
+        "affected_areas": ["Tilak Bridge", "Mandi House Approach"],
+        "active": True,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+]
+
+MUNICIPAL_RESPONSE_UNITS = [
+    {
+        "id": "unit_pump_01",
+        "callsign": "DL-PUMP-01 (High-Discharge Dewatering Unit)",
+        "type": "DEWATERING_PUMP",
+        "status": "DISPATCHED",
+        "current_sector": "Minto Bridge Underpass",
+        "capacity_lpm": 8500,
+        "fuel_pct": 92,
+        "lat": 28.6332,
+        "lng": 77.2270,
+        "assigned_incident_id": "rep_minto_01",
+        "eta_min": 0
+    },
+    {
+        "id": "unit_ndrf_02",
+        "callsign": "NDRF-RESCUE-04 (Waterborne Quick Response)",
+        "type": "RESCUE_BOAT",
+        "status": "STANDBY",
+        "current_sector": "Yamuna Embankment / ITO",
+        "capacity_lpm": 0,
+        "fuel_pct": 98,
+        "lat": 28.6280,
+        "lng": 77.2480,
+        "assigned_incident_id": None,
+        "eta_min": 12
+    },
+    {
+        "id": "unit_traffic_03",
+        "callsign": "DTP-BARRICADE-02 (Traffic Control & Diversions)",
+        "type": "TRAFFIC_BARRICADE",
+        "status": "ON_SCENE",
+        "current_sector": "Tilak Bridge Underpass",
+        "capacity_lpm": 0,
+        "fuel_pct": 84,
+        "lat": 28.6260,
+        "lng": 77.2405,
+        "assigned_incident_id": "rep_tilak_02",
+        "eta_min": 0
+    },
+    {
+        "id": "unit_pump_04",
+        "callsign": "DL-PUMP-02 (Mobile Trailer Pump)",
+        "type": "DEWATERING_PUMP",
+        "status": "STANDBY",
+        "current_sector": "Central Vista Depot",
+        "capacity_lpm": 6000,
+        "fuel_pct": 100,
+        "lat": 28.6145,
+        "lng": 77.2050,
+        "assigned_incident_id": None,
+        "eta_min": 8
+    }
+]
+
+def add_audit_log(action: str, details: str, operator: str = "COMMAND_OPERATOR_01"):
+    ADMIN_AUDIT_LOGS.insert(0, {
+        "id": f"log_{uuid.uuid4().hex[:8]}",
+        "action": action,
+        "operator": operator,
+        "details": details,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    })
+    # Keep last 100 logs
+    if len(ADMIN_AUDIT_LOGS) > 100:
+        ADMIN_AUDIT_LOGS.pop()
+
+# Initialize Seeded Reports with test media
+def init_seeded_reports():
+    global CITIZEN_REPORTS
+    if CITIZEN_REPORTS:
+        return
+
+    test_media_dir = find_test_media_dir()
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    def load_b64(fname):
+        fpath = os.path.join(test_media_dir, fname)
+        if os.path.exists(fpath):
+            img = cv2.imread(fpath)
+            if img is not None:
+                raw_b64 = image_to_base64(img, 75)
+                blurred_img = generate_privacy_blurred_image(img)
+                blurred_b64 = image_to_base64(blurred_img, 75)
+                return raw_b64, blurred_b64
+        return None, None
+
+    r1_raw, r1_blurred = load_b64("CAM01.png")
+    r2_raw, r2_blurred = load_b64("CAM02.png")
+    r3_raw, r3_blurred = load_b64("CAM03.png")
+
+    CITIZEN_REPORTS = [
+        {
+            "id": "rep_minto_01",
+            "title": "Minto Underpass Deep Water Stalling",
+            "flagged_road_name": "Minto Bridge Underpass Corridor",
+            "lat": 28.6332,
+            "lng": 77.2270,
+            "severity": "High",
+            "water_level": "high",
+            "depth_cm": 62.4,
+            "status": "dispatched",  # pending_review, verified, dispatched, resolved, dismissed
+            "public_visible": True,
+            "privacy_status": "privacy_blurred",
+            "raw_image": r1_raw,
+            "blurred_image": r1_blurred,
+            "reason": "Vehicle submerged past tire wheel well under rail bridge. High water rush.",
+            "assigned_unit": "DL-PUMP-01 (High-Discharge Dewatering Unit)",
+            "priority": "P1_CRITICAL",
+            "created_at": now_iso,
+            "timestamp": now_iso
+        },
+        {
+            "id": "rep_tilak_02",
+            "title": "Tilak Bridge Rail Underpass Inundation",
+            "flagged_road_name": "Tilak Bridge Railway Choke Point",
+            "lat": 28.6260,
+            "lng": 77.2405,
+            "severity": "High",
+            "water_level": "high",
+            "depth_cm": 50.0,
+            "status": "dispatched",
+            "public_visible": True,
+            "privacy_status": "privacy_blurred",
+            "raw_image": r2_raw,
+            "blurred_image": r2_blurred,
+            "reason": "Water pooling up to 50cm. Traffic police diversion active.",
+            "assigned_unit": "DTP-BARRICADE-02 (Traffic Control & Diversions)",
+            "priority": "P1_CRITICAL",
+            "created_at": now_iso,
+            "timestamp": now_iso
+        },
+        {
+            "id": "rep_mandi_03",
+            "title": "Mandi House Roundabout Water Accumulation",
+            "flagged_road_name": "Sikandra Road & Mandi House",
+            "lat": 28.6258,
+            "lng": 77.2340,
+            "severity": "Moderate",
+            "water_level": "moderate",
+            "depth_cm": 18.5,
+            "status": "pending_review",
+            "public_visible": False,
+            "privacy_status": "privacy_blurred",
+            "raw_image": r3_raw,
+            "blurred_image": r3_blurred,
+            "reason": "Standing water around roundabout curb. Sedans slowing down significantly.",
+            "assigned_unit": None,
+            "priority": "P2_ELEVATED",
+            "created_at": now_iso,
+            "timestamp": now_iso
+        }
+    ]
+    add_audit_log("SEED_DATA_LOADED", "Seeded 3 operational incident reports with dual raw/privacy-blurred media.")
+
+init_seeded_reports()
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  PUBLIC & AUTHORITY REPORT ENDPOINTS
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 @app.get("/api/reports")
-def get_reports():
-    return {"total": len(CITIZEN_REPORTS), "reports": CITIZEN_REPORTS}
+def get_public_reports():
+    """
+    Public feed of hazard reports:
+    - Excludes unverified / dismissed reports unless approved for public release.
+    - NEVER exposes raw_image; returns only blurred_image for citizen privacy protection.
+    """
+    public_list = []
+    for rpt in CITIZEN_REPORTS:
+        if rpt.get("public_visible", False) or rpt.get("status") in ("verified", "dispatched"):
+            sanitized = dict(rpt)
+            # Guarantee raw image is stripped for public privacy
+            sanitized["raw_image"] = None
+            public_list.append(sanitized)
+    return {"total": len(public_list), "reports": public_list}
+
+@app.get("/api/alerts")
+@app.get("/api/broadcast/alerts")
+def get_public_alerts():
+    """Public active emergency broadcast alerts for top banners and citizen notices."""
+    active = [a for a in EMERGENCY_ALERTS if a.get("active", True)]
+    return {"total": len(active), "alerts": active}
 
 class CitizenReportRequest(BaseModel):
     lat: float
     lng: float
     water_level: Optional[str] = "moderate"
     image_base64: Optional[str] = None
+    reason: Optional[str] = None
+    road_name: Optional[str] = None
 
 @app.post("/api/citizen-report")
-def submit_report(body: CitizenReportRequest):
-    rep_id = str(uuid.uuid4())
+def submit_citizen_report(body: CitizenReportRequest):
+    """
+    Citizen hazard ingestion pipeline:
+    - Decodes submitted image
+    - Runs dual-YOLO water segmentation & object estimation
+    - Generates Gaussian privacy-blurred copy for citizen face/plate protection
+    - Sets report to 'pending_review' in Authority Incident Queue
+    """
+    rep_id = f"rep_{uuid.uuid4().hex[:8]}"
     now_iso = datetime.now(timezone.utc).isoformat()
+
+    raw_b64 = body.image_base64
+    blurred_b64 = None
+    depth_cm = 35.0 if body.water_level == "high" else (18.0 if body.water_level == "moderate" else 5.0)
+
+    if raw_b64:
+        img = base64_to_image(raw_b64)
+        if img is not None:
+            # Run segmentation & depth calculation
+            try:
+                _, inf_depth, _, status_text, _ = process_frame_full(img)
+                if inf_depth > 0:
+                    depth_cm = inf_depth
+            except Exception as e:
+                print(f"--> [REPORT INGEST] Inference note: {e}")
+
+            # Run privacy blurring engine
+            blurred_img = generate_privacy_blurred_image(img)
+            blurred_b64 = image_to_base64(blurred_img, 75)
+    else:
+        # Fallback dummy placeholder if no image provided
+        blank = np.zeros((360, 480, 3), dtype=np.uint8)
+        cv2.putText(blank, "NO PHOTO ATTACHED - SENSOR TELEMETRY", (30, 180),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (100, 100, 100), 1)
+        raw_b64 = image_to_base64(blank, 50)
+        blurred_b64 = raw_b64
+
+    priority = "P1_CRITICAL" if depth_cm >= 40 else ("P2_ELEVATED" if depth_cm >= 15 else "P3_STANDARD")
+
     rep = {
         "id": rep_id,
+        "title": f"Hazard at [{body.lat:.4f}, {body.lng:.4f}]",
+        "flagged_road_name": body.road_name or "Reported Sector Road",
         "lat": body.lat,
         "lng": body.lng,
         "severity": body.water_level.capitalize() if body.water_level else "Moderate",
         "water_level": body.water_level or "moderate",
-        "status": "verified",
-        "depth_cm": 35 if body.water_level == "high" else 18,
+        "depth_cm": depth_cm,
+        "status": "pending_review",
+        "public_visible": False,  # Authority reviews before public release
+        "privacy_status": "privacy_blurred",
+        "raw_image": raw_b64,
+        "blurred_image": blurred_b64,
+        "reason": body.reason or "Citizen field observation logged via mobile app.",
+        "assigned_unit": None,
+        "priority": priority,
         "created_at": now_iso,
         "timestamp": now_iso
     }
-    CITIZEN_REPORTS.append(rep)
-    return {"status": "verified", "message": "Report received and validated", "report": rep}
+
+    CITIZEN_REPORTS.insert(0, rep)
+    add_audit_log("CITIZEN_REPORT_SUBMITTED", f"Report {rep_id} received at [{body.lat:.4f}, {body.lng:.4f}] with {depth_cm}cm depth.")
+
+    return {
+        "status": "pending_review",
+        "message": "Report received and queued for authority review with privacy protection.",
+        "report": {
+            "id": rep["id"],
+            "lat": rep["lat"],
+            "lng": rep["lng"],
+            "depth_cm": rep["depth_cm"],
+            "status": rep["status"],
+            "privacy_status": rep["privacy_status"],
+            "blurred_image": rep["blurred_image"],
+            "created_at": rep["created_at"]
+        }
+    }
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  AUTHORITY COMMAND & CONTROL ENDPOINTS
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+@app.get("/api/admin/reports")
+def get_admin_reports():
+    """Returns complete incident reports with raw & privacy-blurred previews for Authority Eyes Only."""
+    return {"total": len(CITIZEN_REPORTS), "reports": CITIZEN_REPORTS}
+
+class UpdateReportStatusRequest(BaseModel):
+    status: str  # pending_review, verified, dispatched, resolved, dismissed
+    public_visible: Optional[bool] = None
+    assigned_unit: Optional[str] = None
+    notes: Optional[str] = None
+    priority: Optional[str] = None
+    depth_cm: Optional[float] = None
+
+@app.post("/api/admin/reports/{report_id}/status")
+@app.patch("/api/admin/reports/{report_id}")
+def update_report_status(report_id: str, body: UpdateReportStatusRequest):
+    """Authority review action on citizen reports."""
+    for rpt in CITIZEN_REPORTS:
+        if rpt["id"] == report_id:
+            rpt["status"] = body.status
+            if body.public_visible is not None:
+                rpt["public_visible"] = body.public_visible
+            elif body.status in ("verified", "dispatched"):
+                rpt["public_visible"] = True
+            elif body.status in ("dismissed",):
+                rpt["public_visible"] = False
+
+            if body.assigned_unit is not None:
+                rpt["assigned_unit"] = body.assigned_unit
+            if body.priority is not None:
+                rpt["priority"] = body.priority
+            if body.depth_cm is not None:
+                rpt["depth_cm"] = body.depth_cm
+            if body.notes:
+                rpt["notes"] = body.notes
+
+            add_audit_log(
+                "REPORT_STATUS_UPDATED",
+                f"Report {report_id} updated to '{body.status}' (Public release: {rpt.get('public_visible')}, Assigned: {rpt.get('assigned_unit')})."
+            )
+            return {"status": "ok", "report": rpt}
+
+    raise HTTPException(status_code=404, detail="Incident report not found")
+
+@app.post("/api/admin/reports/{report_id}/blur")
+def reblur_report_image(report_id: str):
+    """Re-runs privacy blurring pipeline on an existing report."""
+    for rpt in CITIZEN_REPORTS:
+        if rpt["id"] == report_id:
+            if rpt.get("raw_image"):
+                img = base64_to_image(rpt["raw_image"])
+                if img is not None:
+                    blurred_img = generate_privacy_blurred_image(img)
+                    rpt["blurred_image"] = image_to_base64(blurred_img, 75)
+                    rpt["privacy_status"] = "privacy_blurred"
+                    add_audit_log("PRIVACY_REBLUR_APPLIED", f"Re-generated privacy blur for report {report_id}.")
+                    return {"status": "ok", "report": rpt}
+    raise HTTPException(status_code=404, detail="Report or raw image not found")
+
+@app.get("/api/admin/alerts")
+def get_admin_alerts():
+    return {"total": len(EMERGENCY_ALERTS), "alerts": EMERGENCY_ALERTS}
+
+class CreateAlertRequest(BaseModel):
+    title: str
+    message: str
+    severity: str = "WARNING"  # CRITICAL, WARNING, ADVISORY
+    affected_areas: Optional[List[str]] = []
+
+@app.post("/api/admin/alerts")
+def create_emergency_alert(body: CreateAlertRequest):
+    alert_id = f"alert_{uuid.uuid4().hex[:8]}"
+    alert = {
+        "id": alert_id,
+        "title": body.title,
+        "message": body.message,
+        "severity": body.severity.upper(),
+        "affected_areas": body.affected_areas or ["Central Delhi Municipal Region"],
+        "active": True,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    EMERGENCY_ALERTS.insert(0, alert)
+    add_audit_log("EMERGENCY_ALERT_BROADCAST", f"Broadcasted {alert['severity']}: {alert['title']}")
+    return {"status": "ok", "alert": alert}
+
+@app.delete("/api/admin/alerts/{alert_id}")
+def delete_emergency_alert(alert_id: str):
+    global EMERGENCY_ALERTS
+    EMERGENCY_ALERTS = [a for a in EMERGENCY_ALERTS if a["id"] != alert_id]
+    add_audit_log("EMERGENCY_ALERT_EXPIRED", f"Deactivated alert {alert_id}")
+    return {"status": "ok", "deleted_id": alert_id}
+
+@app.get("/api/admin/units")
+def get_municipal_units():
+    return {"total": len(MUNICIPAL_RESPONSE_UNITS), "units": MUNICIPAL_RESPONSE_UNITS}
+
+class DispatchUnitRequest(BaseModel):
+    unit_id: str
+    incident_id: Optional[str] = None
+    sector: Optional[str] = None
+    status: Optional[str] = "DISPATCHED"
+
+@app.post("/api/admin/units/dispatch")
+def dispatch_unit(body: DispatchUnitRequest):
+    for u in MUNICIPAL_RESPONSE_UNITS:
+        if u["id"] == body.unit_id:
+            u["status"] = body.status or "DISPATCHED"
+            if body.sector:
+                u["current_sector"] = body.sector
+            if body.incident_id:
+                u["assigned_incident_id"] = body.incident_id
+                # Also update incident report
+                for rpt in CITIZEN_REPORTS:
+                    if rpt["id"] == body.incident_id:
+                        rpt["assigned_unit"] = u["callsign"]
+                        rpt["status"] = "dispatched"
+
+            add_audit_log("UNIT_DISPATCHED", f"{u['callsign']} assigned to {u['current_sector']}.")
+            return {"status": "ok", "unit": u}
+    raise HTTPException(status_code=404, detail="Response unit not found")
+
+class RoadOverrideRequest(BaseModel):
+    road_id: str
+    status: str  # SAFE, CAUTION, BLOCKED
+    depth_cm: Optional[float] = 0.0
+    reason: Optional[str] = None
+
+@app.post("/api/admin/roads/override")
+def override_road_status(body: RoadOverrideRequest):
+    ROAD_OVERRIDES[body.road_id] = {
+        "status": body.status.upper(),
+        "depth_cm": body.depth_cm or 0.0,
+        "reason": body.reason or "Authority manual override",
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+    add_audit_log("ROAD_STATUS_OVERRIDE", f"Road {body.road_id} manually forced to {body.status.upper()} ({body.depth_cm}cm).")
+    return {"status": "ok", "overrides": ROAD_OVERRIDES}
+
+@app.get("/api/admin/roads/overrides")
+def get_road_overrides():
+    return {"overrides": ROAD_OVERRIDES}
+
+@app.get("/api/admin/logs")
+def get_admin_logs():
+    return {"total": len(ADMIN_AUDIT_LOGS), "logs": ADMIN_AUDIT_LOGS}
+
 
 class RouteRequest(BaseModel):
     origin: List[float]

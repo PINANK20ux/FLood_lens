@@ -156,10 +156,31 @@ export default function CitizenHazards() {
                         </span>
                       </div>
 
+                      {/* Privacy-Blurred Media Preview if present */}
+                      {(rpt.blurred_image || rpt.image) && (
+                        <div className="relative rounded-xl overflow-hidden border border-ink-800/10 h-36 bg-ink-950">
+                          <img
+                            src={rpt.blurred_image || rpt.image}
+                            alt="Privacy Protected Flood Observation"
+                            className="w-full h-full object-cover"
+                          />
+                          <div className="absolute bottom-1.5 left-1.5 bg-ink-950/85 backdrop-blur-sm text-channel-300 px-2 py-0.5 rounded text-[9px] font-mono border border-channel-500/30 flex items-center gap-1">
+                            <ShieldCheck size={11} />
+                            <span>Privacy Protected • Faces/Plates Blurred</span>
+                          </div>
+                        </div>
+                      )}
+
                       {rpt.flagged_road_name && (
                         <div className="text-xs font-semibold text-ink-900 flex items-center gap-1.5">
                           <MapPin size={13} className="text-channel-600 shrink-0" />
                           <span>Road Flagged: {rpt.flagged_road_name}</span>
+                        </div>
+                      )}
+
+                      {rpt.assigned_unit && (
+                        <div className="text-[11px] font-mono text-purple-700 bg-purple-50 border border-purple-200 px-2.5 py-1 rounded-lg">
+                          🚨 Municipal Action: <strong>{rpt.assigned_unit}</strong>
                         </div>
                       )}
 

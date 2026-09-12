@@ -205,6 +205,11 @@ export default function ReportModal() {
                     <input type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
                   </label>
                 )}
+
+                <div className="mt-2 text-[10px] font-mono text-ink-500 bg-paper-100 p-2 rounded-xl border border-ink-800/5 flex items-center gap-1.5">
+                  <ShieldCheck size={13} className="text-channel-600 shrink-0" />
+                  <span><strong>Privacy Guarantee:</strong> Faces and license plates are blurred by AI before any public release.</span>
+                </div>
               </div>
 
               {/* Submit Button */}

@@ -269,7 +269,7 @@ export default function RoadAccessibility() {
                   <div className="flex items-center gap-2 bg-ink-950/85 backdrop-blur-md px-3 py-1.5 rounded-full border border-ink-700/60 text-xs font-mono text-paper-50 shadow-sm">
                     <Radio size={13} className="text-red-400 animate-pulse" />
                     <span>
-                      {isCam06 ? "Live Hardware Node • 60 FPS • Edge AI" : "Fixed CCTV Node • 60 FPS • 720p Edge AI"}
+                      {isCam06 ? "Live Hardware Node • 30 FPS • Edge AI" : "Fixed CCTV Node • 60 FPS • 720p Edge AI"}
                     </span>
                   </div>
 
