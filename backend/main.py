@@ -429,27 +429,45 @@ class LiveCameraWorker:
         self.overlay_cache = InferenceOverlayCache()
         self.fps_smoothed = 30.0
         self.prev_frame_time = time.time()
+        self.has_received_valid_frame = False
 
     def _init_capture(self) -> bool:
         if self.cap is not None:
-            self.cap.release()
+            try:
+                self.cap.release()
+            except Exception:
+                pass
             self.cap = None
 
-        print(f"--> [CAMERA WORKER] Opening device index {self.device_index} via CAP_DSHOW...")
-        self.cap = cv2.VideoCapture(self.device_index, cv2.CAP_DSHOW)
-        if not self.cap.isOpened():
-            print("--> [CAMERA WORKER] DirectShow failed, attempting auto backend...")
-            self.cap = cv2.VideoCapture(self.device_index)
+        print(f"--> [CAMERA WORKER] Opening device index {self.device_index}...")
+        
+        # Try backends in order of preference on Windows: DSHOW -> MSMF -> ANY
+        backends = [
+            (cv2.CAP_DSHOW, "CAP_DSHOW"),
+            (cv2.CAP_MSMF, "CAP_MSMF"),
+            (cv2.CAP_ANY, "CAP_ANY")
+        ]
 
-        if self.cap.isOpened():
-            self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'))
-            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
-            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
-            self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Drop stale hardware queue
-            print(f"--> [CAMERA WORKER] Hardware capture initialized successfully.")
-            return True
+        for backend_flag, backend_name in backends:
+            try:
+                cap = cv2.VideoCapture(self.device_index, backend_flag)
+                if cap.isOpened():
+                    cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
+                    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
+                    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
-        print(f"--> [CAMERA WORKER] Warning: Unable to open camera device index {self.device_index}")
+                    # Verify device can actually read a valid frame
+                    ret, test_frame = cap.read()
+                    if ret and test_frame is not None:
+                        self.cap = cap
+                        print(f"--> [CAMERA WORKER] Hardware capture initialized successfully on {backend_name} ({test_frame.shape[1]}x{test_frame.shape[0]}).")
+                        return True
+                    else:
+                        cap.release()
+            except Exception as err:
+                print(f"--> [CAMERA WORKER] Backend {backend_name} error: {err}")
+
+        print(f"--> [CAMERA WORKER] Warning: Unable to acquire frames from device index {self.device_index}")
         return False
 
     def start(self) -> "LiveCameraWorker":
@@ -459,88 +477,108 @@ class LiveCameraWorker:
         self._init_capture()
         self.worker_thread = threading.Thread(target=self._worker_loop, name=f"CamWorker-{self.device_index}", daemon=True)
         self.worker_thread.start()
-        print(f"--> [CAMERA WORKER] Background ingestion worker thread started (Cadence={self.cadence}).")
+        print(f"--> [CAMERA WORKER] Background ingestion worker thread started (Device={self.device_index}, Cadence={self.cadence}).")
         return self
 
     def _worker_loop(self):
         frame_count = 0
+        consecutive_drops = 0
         blank_rendered_time = 0.0
 
         while self.running:
-            # Reconnection logic if camera is offline
-            if self.cap is None or not self.cap.isOpened():
-                time.sleep(1.0)
-                self._init_capture()
-                continue
+            try:
+                # Reconnection logic if camera is offline or dropped
+                if self.cap is None or not self.cap.isOpened() or consecutive_drops >= 3:
+                    if consecutive_drops >= 3:
+                        print(f"--> [CAMERA WORKER] Detected {consecutive_drops} dropped frames. Re-syncing hardware stream...")
+                    time.sleep(0.5)
+                    success = self._init_capture()
+                    if success:
+                        consecutive_drops = 0
+                    continue
 
-            grabbed, frame = self.cap.read()
+                grabbed, frame = self.cap.read()
 
-            now = time.time()
-            dt = now - self.prev_frame_time
-            self.prev_frame_time = now
-            if dt > 0:
-                instant_fps = 1.0 / dt
-                self.fps_smoothed = 0.90 * self.fps_smoothed + 0.10 * instant_fps
+                now = time.time()
+                dt = now - self.prev_frame_time
+                self.prev_frame_time = now
+                if dt > 0:
+                    instant_fps = 1.0 / dt
+                    self.fps_smoothed = 0.90 * self.fps_smoothed + 0.10 * instant_fps
 
-            if not grabbed or frame is None:
-                # Render waiting screen badge if feed drops
-                if now - blank_rendered_time > 0.1:
-                    blank = np.zeros((self.height, self.width, 3), dtype=np.uint8)
-                    cv2.putText(blank, "CONNECTING OPTICAL SENSOR...", (60, self.height // 2),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 165, 255), 2, cv2.LINE_AA)
-                    _, buf = cv2.imencode('.jpg', blank, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
-                    with self.lock:
-                        self._latest_jpeg_bytes = buf.tobytes()
-                    blank_rendered_time = now
+                if not grabbed or frame is None:
+                    consecutive_drops += 1
+                    # Render connecting badge if device hasn't provided frames yet
+                    if not self.has_received_valid_frame and (now - blank_rendered_time > 0.15):
+                        blank = np.zeros((self.height, self.width, 3), dtype=np.uint8)
+                        cv2.putText(blank, f"CONNECTING OPTICAL SENSOR (DEVICE {self.device_index})...", (30, self.height // 2),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 165, 255), 2, cv2.LINE_AA)
+                        _, buf = cv2.imencode('.jpg', blank, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
+                        with self.lock:
+                            self._latest_jpeg_bytes = buf.tobytes()
+                        blank_rendered_time = now
+                    time.sleep(0.03)
+                    continue
+
+                # Valid frame received
+                consecutive_drops = 0
+                self.has_received_valid_frame = True
+                frame_count += 1
+
+                # 1. Dual-YOLO Inference Pass on Cadence (e.g. every 3rd frame)
+                if frame_count % self.cadence == 0 or frame_count == 1:
+                    with torch.inference_mode():
+                        obj_kwargs = {
+                            "source": frame,
+                            "device": DEVICE,
+                            "classes": [0, 1, 2, 3, 5, 7],
+                            "conf": 0.25,
+                            "imgsz": self.infer_imgsz,
+                            "verbose": False
+                        }
+                        if USE_HALF and DEVICE != "cpu":
+                            obj_kwargs["half"] = True
+
+                        obj_res = obj_model.predict(**obj_kwargs)[0]
+
+                        water_kwargs = {
+                            "source": frame,
+                            "device": DEVICE,
+                            "conf": 0.15,
+                            "imgsz": self.infer_imgsz,
+                            "verbose": False
+                        }
+                        if USE_HALF and DEVICE != "cpu":
+                            water_kwargs["half"] = True
+
+                        water_res = water_model.predict(**water_kwargs)[0]
+
+                    # Update overlay cache with newly inferred masks & bounding boxes
+                    self.overlay_cache.update_from_inference(frame.shape[:2], obj_res, water_res)
+
+                # 2. Render Overlays & HUD on incoming frame
+                annotated_frame = self.overlay_cache.render_overlay(frame, fps=self.fps_smoothed)
+
+                # 3. Pre-encode to JPEG (Quality: 70 for fast network transfer)
+                _, buf = cv2.imencode('.jpg', annotated_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
+                jpeg_bytes = buf.tobytes()
+
+                # 4. Atomic update of shared output state
+                with self.lock:
+                    self._latest_jpeg_bytes = jpeg_bytes
+                    self._latest_telemetry = {
+                        "cam_id": "CAM06",
+                        "water_depth_cm": self.overlay_cache.depth_cm,
+                        "tire_submersion_pct": self.overlay_cache.submersion_pct,
+                        "status": self.overlay_cache.status,
+                        "passability": self.overlay_cache.passability,
+                        "fps": round(self.fps_smoothed, 1),
+                        "timestamp": datetime.now(timezone.utc).isoformat()
+                    }
+
+            except Exception as e:
+                print(f"--> [CAMERA WORKER] Error in frame loop: {e}")
                 time.sleep(0.05)
-                continue
-
-            frame_count += 1
-
-            # 1. Dual-YOLO Inference Pass on Cadence (e.g. every 3rd frame)
-            if frame_count % self.cadence == 0:
-                with torch.inference_mode():
-                    obj_res = obj_model.predict(
-                        source=frame,
-                        device=DEVICE,
-                        classes=[0, 1, 2, 3, 5, 7],
-                        conf=0.25,
-                        imgsz=self.infer_imgsz,
-                        half=USE_HALF,
-                        verbose=False
-                    )[0]
-
-                    water_res = water_model.predict(
-                        source=frame,
-                        device=DEVICE,
-                        conf=0.15,
-                        imgsz=self.infer_imgsz,
-                        half=USE_HALF,
-                        verbose=False
-                    )[0]
-
-                # Update overlay cache with newly inferred masks & bounding boxes
-                self.overlay_cache.update_from_inference(frame.shape[:2], obj_res, water_res)
-
-            # 2. Render Overlays & HUD on incoming frame
-            annotated_frame = self.overlay_cache.render_overlay(frame, fps=self.fps_smoothed)
-
-            # 3. Pre-encode to JPEG (Quality: 70 for fast network transfer)
-            _, buf = cv2.imencode('.jpg', annotated_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
-            jpeg_bytes = buf.tobytes()
-
-            # 4. Atomic update of shared output state
-            with self.lock:
-                self._latest_jpeg_bytes = jpeg_bytes
-                self._latest_telemetry = {
-                    "cam_id": "CAM06",
-                    "water_depth_cm": self.overlay_cache.depth_cm,
-                    "tire_submersion_pct": self.overlay_cache.submersion_pct,
-                    "status": self.overlay_cache.status,
-                    "passability": self.overlay_cache.passability,
-                    "fps": round(self.fps_smoothed, 1),
-                    "timestamp": datetime.now(timezone.utc).isoformat()
-                }
 
     def get_latest_output(self) -> Tuple[Optional[bytes], Dict[str, Any]]:
         """Thread-safe getter for pre-encoded JPEG bytes and telemetry dict."""
@@ -552,27 +590,38 @@ class LiveCameraWorker:
         if self.worker_thread and self.worker_thread.is_alive():
             self.worker_thread.join(timeout=1.5)
         if self.cap is not None:
-            self.cap.release()
+            try:
+                self.cap.release()
+            except Exception:
+                pass
             self.cap = None
-        print("--> [CAMERA WORKER] Worker released cleanly.")
+        print(f"--> [CAMERA WORKER] Device {self.device_index} released cleanly.")
 
 
-# Global camera worker pool keyed by device index
-CAMERA_WORKERS: Dict[int, LiveCameraWorker] = {}
+# Global active camera worker instance
+ACTIVE_CAMERA_WORKER: Optional[LiveCameraWorker] = None
 WORKER_POOL_LOCK = threading.Lock()
 
 def get_or_create_camera_worker(device_index: int = 0) -> LiveCameraWorker:
+    global ACTIVE_CAMERA_WORKER
     with WORKER_POOL_LOCK:
-        if device_index not in CAMERA_WORKERS or not CAMERA_WORKERS[device_index].running:
-            worker = LiveCameraWorker(
-                device_index=device_index,
-                width=640,
-                height=480,
-                cadence=3,
-                infer_imgsz=DEFAULT_INFER_IMGSZ
-            ).start()
-            CAMERA_WORKERS[device_index] = worker
-        return CAMERA_WORKERS[device_index]
+        # If an active worker exists for a DIFFERENT device, cleanly stop it first
+        if ACTIVE_CAMERA_WORKER is not None:
+            if ACTIVE_CAMERA_WORKER.device_index == device_index and ACTIVE_CAMERA_WORKER.running:
+                return ACTIVE_CAMERA_WORKER
+            print(f"--> [CAMERA WORKER] Switching active camera from device {ACTIVE_CAMERA_WORKER.device_index} to {device_index}...")
+            ACTIVE_CAMERA_WORKER.stop()
+            ACTIVE_CAMERA_WORKER = None
+
+        worker = LiveCameraWorker(
+            device_index=device_index,
+            width=640,
+            height=480,
+            cadence=3,
+            infer_imgsz=DEFAULT_INFER_IMGSZ
+        ).start()
+        ACTIVE_CAMERA_WORKER = worker
+        return ACTIVE_CAMERA_WORKER
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -632,10 +681,11 @@ def run_water_inference_on_test_images():
 
 @app.on_event("shutdown")
 def cleanup_camera_workers():
+    global ACTIVE_CAMERA_WORKER
     with WORKER_POOL_LOCK:
-        for worker in CAMERA_WORKERS.values():
-            worker.stop()
-        CAMERA_WORKERS.clear()
+        if ACTIVE_CAMERA_WORKER is not None:
+            ACTIVE_CAMERA_WORKER.stop()
+            ACTIVE_CAMERA_WORKER = None
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -884,19 +934,39 @@ def compute_route(body: RouteRequest):
 #  HARDWARE CAMERAS & NON-BLOCKING STREAMING ENDPOINT
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+DETECTED_CAMERAS_CACHE = {"devices": [0, 1], "timestamp": 0.0}
+
 @app.get("/api/hardware/cameras")
 @app.get("/api/cameras/hardware")
 def detect_cameras():
+    now = time.time()
+    if now - DETECTED_CAMERAS_CACHE["timestamp"] < 10.0:
+        return {"available_devices": DETECTED_CAMERAS_CACHE["devices"]}
+
     found = []
+    active_idx = ACTIVE_CAMERA_WORKER.device_index if (ACTIVE_CAMERA_WORKER and ACTIVE_CAMERA_WORKER.running) else None
+
     for idx in range(3):
-        cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW)
-        if not cap.isOpened():
-            cap = cv2.VideoCapture(idx)
-        if cap.isOpened():
-            ret, _ = cap.read()
-            if ret:
-                found.append(idx)
-            cap.release()
+        if idx == active_idx:
+            found.append(idx)
+            continue
+        try:
+            cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW)
+            if not cap.isOpened():
+                cap = cv2.VideoCapture(idx)
+            if cap.isOpened():
+                ret, frame = cap.read()
+                if ret and frame is not None:
+                    found.append(idx)
+                cap.release()
+        except Exception:
+            pass
+
+    if not found:
+        found = [0, 1]
+
+    DETECTED_CAMERAS_CACHE["devices"] = found
+    DETECTED_CAMERAS_CACHE["timestamp"] = now
     return {"available_devices": found}
 
 @app.get("/api/webcam/device")
