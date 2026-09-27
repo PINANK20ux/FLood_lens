@@ -1,0 +1,99 @@
+@import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
+
+/* ---- Tailwind v4 theme tokens ---- */
+@theme {
+  --color-cream: #F5EFE3;
+  --color-forest: #4F5B2A;
+  --color-amber: #B8892D;
+  --color-sand: #D8C9A8;
+  --color-dark: #1F2414;
+  --color-danger: #C2410C;
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+/* ---- Base ---- */
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-cream text-dark font-sans antialiased;
+}
+
+/* ---- Leaflet overrides ---- */
+.leaflet-container {
+  font-family: inherit;
+  background: #e8e0d0;
+}
+.leaflet-popup-content-wrapper {
+  @apply rounded-xl shadow-lg border border-sand;
+  background: #F5EFE3;
+}
+.leaflet-popup-tip {
+  background: #F5EFE3;
+}
+.leaflet-control-zoom a {
+  @apply bg-cream text-dark border-sand;
+}
+.leaflet-control-zoom a:hover {
+  @apply bg-sand;
+}
+
+/* ---- Custom scrollbar ---- */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  @apply bg-cream;
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-sand rounded-full;
+}
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-amber;
+}
+
+/* ---- Map marker pulse animation ---- */
+@keyframes pulse-ring {
+  0% { transform: scale(1); opacity: 0.6; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+.marker-pulse::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: inherit;
+  animation: pulse-ring 2s ease-out infinite;
+}
+
+/* ---- Page transition ---- */
+.page-enter {
+  animation: fadeInUp 0.35s ease-out;
+}
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ---- Slide-over drawer ---- */
+.drawer-enter {
+  animation: slideIn 0.3s ease-out;
+}
+@keyframes slideIn {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+/* ---- Camera snapshot shimmer ---- */
+@keyframes shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.shimmer-bg {
+  background: linear-gradient(90deg, #D8C9A8 25%, #F5EFE3 50%, #D8C9A8 75%);
+  background-size: 800px 100%;
+  animation: shimmer 2s infinite linear;
+}
