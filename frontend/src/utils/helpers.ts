@@ -19,15 +19,15 @@ export function haversineDistance(
 }
 
 export const STATUS_COLORS: Record<StationStatus, string> = {
-  safe: '#4F5B2A',
-  caution: '#B8892D',
-  danger: '#C2410C',
+  safe: '#22C55E',
+  caution: '#EAB308',
+  danger: '#EF4444',
 };
 
 export const STATUS_BG_CLASSES: Record<StationStatus, string> = {
-  safe: 'bg-forest text-cream',
-  caution: 'bg-amber text-dark',
-  danger: 'bg-danger text-cream',
+  safe: 'bg-emerald-500 text-white',
+  caution: 'bg-yellow-400 text-slate-900',
+  danger: 'bg-rose-500 text-white',
 };
 
 export const STATUS_LABELS: Record<StationStatus, string> = {

@@ -40,10 +40,62 @@ export async function fetchCameraById(id: string): Promise<CameraStation> {
 export interface CameraSnapshotResult {
   camera_id: string;
   water_percentage: number;
+  water_depth_cm: number;
   depth_label: string;
   status: 'Flooded' | 'Caution' | 'Clear';
   annotated_image: string;
   last_checked: string;
+  stranded_people_count?: number;
+  submerged_vehicles_count?: number;
+  total_objects_detected?: number;
+}
+
+export interface DetectedObjectResult {
+  label: string;
+  confidence: number;
+  is_submerged: boolean;
+  bbox: [number, number, number, number];
+}
+
+export interface FloodAnalysisResult {
+  water_percentage: number;
+  water_severity: 'Low' | 'Moderate' | 'Critical';
+  water_depth_cm: number;
+  depth_label: string;
+  status: 'Flooded' | 'Caution' | 'Clear';
+  stranded_people_count: number;
+  submerged_vehicles_count: number;
+  total_objects_detected: number;
+  annotated_image: string;
+  detected_objects: DetectedObjectResult[];
+}
+
+/**
+ * Run two-stream vision analysis (floodwater segmentation + object detection & submersion logic)
+ * on an image file or blob via POST /api/cameras/analyze.
+ */
+export async function analyzeFloodImage(
+  file: Blob | File,
+  cameraId?: string
+): Promise<FloodAnalysisResult> {
+  const formData = new FormData();
+  const filename = file instanceof File ? file.name : 'snapshot.jpg';
+  formData.append('file', file, filename);
+  if (cameraId) {
+    formData.append('camera_id', cameraId);
+  }
+
+  const res = await fetch(`${API_BASE_URL}/api/cameras/analyze`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const errorBody = await res.text();
+    throw new Error(`Failed to analyze flood image: ${res.status} ${errorBody || res.statusText}`);
+  }
+
+  return res.json();
 }
 
 /**

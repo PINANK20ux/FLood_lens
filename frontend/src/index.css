@@ -3,14 +3,21 @@
 
 /* ---- Tailwind v4 theme tokens ---- */
 @theme {
-  --color-cream: #F5EFE3;
-  --color-forest: #4F5B2A;
-  --color-amber: #B8892D;
-  --color-sand: #D8C9A8;
-  --color-dark: #1F2414;
-  --color-danger: #C2410C;
+  --color-cream: #FAF9F6;
+  --color-forest: #1C3F24;
+  --color-amber: #F0AD4E;
+  --color-sand: #E5E2DC;
+  --color-dark: #121815;
+  --color-danger: #D9534F;
 
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --color-stone-light: #F7F6F2;
+  --color-stone-canvas: #FAF9F6;
+  --color-gis-green: #1C3F24;
+  --color-gis-alert: #D9534F;
+  --color-gis-warn: #F0AD4E;
+
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", Menlo, Consolas, Monaco, monospace;
 }
 
 /* ---- Base ---- */
@@ -25,20 +32,20 @@ body {
 /* ---- Leaflet overrides ---- */
 .leaflet-container {
   font-family: inherit;
-  background: #e8e0d0;
+  background: #F7F6F2;
 }
 .leaflet-popup-content-wrapper {
-  @apply rounded-xl shadow-lg border border-sand;
-  background: #F5EFE3;
+  @apply rounded-xl shadow-lg border border-neutral-300;
+  background: #FAF9F6;
 }
 .leaflet-popup-tip {
-  background: #F5EFE3;
+  background: #FAF9F6;
 }
 .leaflet-control-zoom a {
   @apply bg-cream text-dark border-sand;
 }
 .leaflet-control-zoom a:hover {
-  @apply bg-sand;
+  @apply bg-neutral-200;
 }
 
 /* ---- Custom scrollbar ---- */
@@ -49,10 +56,11 @@ body {
   @apply bg-cream;
 }
 ::-webkit-scrollbar-thumb {
-  @apply bg-sand rounded-full;
+  background: #4D8DBA;
+  border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  @apply bg-amber;
+  background: #086288;
 }
 
 /* ---- Map marker pulse animation ---- */

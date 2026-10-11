@@ -12,9 +12,9 @@ const sizeClasses = {
 };
 
 const colorClasses: Record<StationStatus, string> = {
-  safe: 'bg-emerald-950/85 text-emerald-300 border-emerald-500/50 backdrop-blur-md shadow-sm',
-  caution: 'bg-amber-950/85 text-amber-300 border-amber-500/50 backdrop-blur-md shadow-sm',
-  danger: 'bg-rose-950/90 text-rose-300 border-rose-500/50 backdrop-blur-md shadow-sm',
+  safe: 'bg-emerald-50 text-emerald-800 border-emerald-400 backdrop-blur-md shadow-xs font-semibold',
+  caution: 'bg-yellow-50 text-yellow-900 border-yellow-400 backdrop-blur-md shadow-xs font-bold',
+  danger: 'bg-rose-50 text-rose-800 border-rose-400 backdrop-blur-md shadow-xs font-semibold',
 };
 
 export default function StatusBadge({ status, size = 'md' }: Props) {

@@ -1,20 +1,63 @@
 import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
+  MapContainer,
+  TileLayer,
+  Marker,
+  Popup,
+  ZoomControl,
+} from 'react-leaflet';
+import L from 'leaflet';
+import {
   Map,
   Camera,
   AlertTriangle,
   Info,
-  Search,
-  ShieldCheck,
-  TriangleAlert,
-  OctagonX,
-  Radio,
   ArrowRight,
+  Compass,
+  ExternalLink,
 } from 'lucide-react';
 import { useCameraStations } from '../hooks/useCameraStations';
 import StatusBadge from '../components/StatusBadge';
-import MiniMapPreview from '../components/MiniMapPreview';
+import DepthBadge from '../components/DepthBadge';
+import { DELHI_CENTER } from '../data/mockData';
+import type { StationStatus } from '../types';
+
+/* ─── Marker icon factory ─── */
+function makeMarkerIcon(status: StationStatus) {
+  const color =
+    status === 'danger'
+      ? '#D9534F'
+      : status === 'caution'
+      ? '#F0AD4E'
+      : '#1C3F24';
+
+  const pulseRing =
+    status === 'danger'
+      ? `<div style="position:absolute;inset:-6px;border-radius:50%;background:rgba(217,83,79,0.35);animation:pulse-ring 1.8s ease-out infinite;"></div>`
+      : status === 'caution'
+      ? `<div style="position:absolute;inset:-4px;border-radius:50%;background:rgba(240,173,78,0.25);animation:pulse-ring 2.4s ease-out infinite;"></div>`
+      : '';
+
+  return L.divIcon({
+    className: 'mini-map-pin',
+    html: `
+      <div style="position:relative;width:24px;height:24px;display:flex;align-items:center;justify-content:center;">
+        ${pulseRing}
+        <div style="
+          width:18px;height:18px;border-radius:50%;
+          background:${color};
+          border:2px solid #FFFFFF;
+          box-shadow:0 2px 6px rgba(0,0,0,0.2);
+          z-index:2;
+        "></div>
+      </div>
+    `,
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+    popupAnchor: [0, -12],
+  });
+}
 
 export default function Home() {
   const { stations } = useCameraStations();
@@ -33,183 +76,364 @@ export default function Home() {
     return stations.filter(
       (s) =>
         s.name.toLowerCase().includes(q) ||
+        (s.id || '').toLowerCase().includes(q) ||
         (s.hazard || '').toLowerCase().includes(q)
     );
   }, [search, stations]);
 
-  const navCards = [
+  const navModules = [
     {
       to: '/map',
+      idx: '01',
+      tag: 'GEOSPATIAL ROUTING',
       icon: Map,
       title: 'Safe Roads Map',
-      desc: 'View flooded and clear roads on a live Delhi map.',
-      color: 'bg-forest',
+      desc: 'Topographic corridor routing with automated flooded underpass bypass algorithm.',
     },
     {
       to: '/cameras',
+      idx: '02',
+      tag: 'DUAL-STREAM VISION',
       icon: Camera,
       title: 'Street Cameras',
-      desc: 'Check real-time camera snapshots from key junctions.',
-      color: 'bg-amber',
+      desc: 'Real-time YOLO water segmentation & civilian submersion telemetry from junction nodes.',
     },
     {
       to: '/report',
+      idx: '03',
+      tag: 'SPATIAL VERIFICATION',
       icon: AlertTriangle,
-      title: 'Report an Issue',
-      desc: 'Spotted a flood or hazard? Let us know instantly.',
-      color: 'bg-danger',
+      title: 'Report Hazard',
+      desc: 'Citizen ground observations correlated against nearby cameras within 500-meter radius.',
     },
     {
       to: '/about',
+      idx: '04',
+      tag: 'HYDROLOGIC SYSTEM',
       icon: Info,
-      title: 'How It Works',
-      desc: "Learn how FloodLens keeps Delhi's roads safe.",
-      color: 'bg-dark',
+      title: 'System Architecture',
+      desc: 'Open-source urban flood monitoring framework designed for high-density municipal grids.',
     },
   ];
 
   return (
-    <div className="page-enter">
-      {/* Hero */}
-      <section className="relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-forest/5 via-transparent to-amber/5 pointer-events-none" />
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-16 lg:py-20">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
-            {/* Left Column */}
-            <div className="lg:col-span-7 flex flex-col justify-center">
-              <div className="inline-flex items-center gap-2 px-3 py-1 mb-6 rounded-full bg-forest/10 border border-forest/20 w-fit">
-                <Radio className="w-3.5 h-3.5 text-forest animate-pulse" />
-                <span className="text-xs font-medium text-forest">
-                  Live monitoring across Delhi
-                </span>
+    <div className="page-enter bg-[#FAF9F6] text-slate-900 min-h-screen">
+      {/* ═══════════ HERO: Clean 2-Column Split (Map on Top-Left, Text & Search on Right) ═══════════ */}
+      <section className="relative">
+        <div className="grid grid-cols-1 lg:grid-cols-2 min-h-[540px] lg:min-h-[580px]">
+          {/* ── LEFT COLUMN: Mini Map (Top-Left) ── */}
+          <div className="relative flex flex-col px-6 sm:px-8 lg:px-10 xl:px-12 py-8 lg:py-10 lg:border-r border-slate-200">
+            {/* System status pill */}
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-white border border-slate-200 font-mono text-[11px] text-slate-700 mb-5 w-fit select-none">
+              <span className="relative flex h-2 w-2">
+                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${stats.danger > 0 ? 'bg-[#D9534F]' : 'bg-[#1C3F24]'}`} />
+                <span className={`relative inline-flex rounded-full h-2 w-2 ${stats.danger > 0 ? 'bg-[#D9534F]' : 'bg-[#1C3F24]'}`} />
+              </span>
+              <span className="font-bold text-[#1C3F24] tracking-wider">
+                [REC]
+              </span>
+              <span className="text-slate-500 tracking-tight">
+                DELHI NCR <span className="text-slate-300 mx-0.5">//</span> LIVE RADAR
+              </span>
+            </div>
+
+            {/* Mini Map Container */}
+            <div className="relative flex-1 min-h-[360px] lg:min-h-[420px] rounded-xl border border-slate-200 bg-white shadow-xs overflow-hidden">
+              {/* Map overlay controls */}
+              <div className="absolute top-3 left-3 z-[450] flex items-center gap-3">
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-white/95 backdrop-blur-sm border border-slate-200 rounded-md shadow-sm">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#E05D38] opacity-60" />
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-[#E05D38]" />
+                  </span>
+                  <span className="font-mono text-[11px] font-medium text-slate-700 tracking-tight">
+                    LIVE BASIN RADAR
+                  </span>
+                </div>
+                <Link
+                  to="/map"
+                  className="flex items-center gap-1 px-2.5 py-1.5 bg-white/95 backdrop-blur-sm border border-slate-200 rounded-md shadow-sm text-[11px] font-mono font-medium text-[#1C3F24] hover:bg-[#1C3F24] hover:text-white transition-colors"
+                >
+                  Full Map
+                  <ExternalLink className="w-3 h-3" />
+                </Link>
               </div>
 
-              <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold text-dark leading-tight tracking-tight">
-                Clear paths when{' '}
-                <span className="text-forest">waters rise.</span>
-              </h1>
+              {/* Leaflet map */}
+              <MapContainer
+                center={DELHI_CENTER}
+                zoom={11}
+                scrollWheelZoom={false}
+                zoomControl={false}
+                className="h-full w-full z-0"
+                style={{ minHeight: '360px' }}
+              >
+                <TileLayer
+                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                  maxZoom={19}
+                />
+                <ZoomControl position="bottomright" />
 
-              <p className="mt-5 text-base sm:text-lg md:text-xl text-dark/70 leading-relaxed max-w-2xl">
-                Live flood tracking across Delhi's key roads and underpasses using
-                camera intelligence. Know which roads are safe before you leave.
-              </p>
+                {stations.map((station) => (
+                  <Marker
+                    key={station.id}
+                    position={[station.latitude, station.longitude]}
+                    icon={makeMarkerIcon(station.status)}
+                  >
+                    <Popup>
+                      <div className="p-1 min-w-[190px] text-slate-900 font-sans">
+                        <div className="flex items-center justify-between gap-2 border-b border-slate-200 pb-1 mb-1.5">
+                          <span className="font-mono text-[10px] text-slate-500 uppercase tracking-wider font-semibold">
+                            {station.id}
+                          </span>
+                          <span className="font-mono text-[10px] text-slate-500">
+                            {station.latitude.toFixed(3)}°,{' '}
+                            {station.longitude.toFixed(3)}°
+                          </span>
+                        </div>
+                        <p className="font-bold text-xs leading-snug">
+                          {station.name}
+                        </p>
+                        <div className="flex items-center gap-1.5 mt-2">
+                          <DepthBadge
+                            cm={station.water_level_cm}
+                            status={station.status}
+                          />
+                          <StatusBadge status={station.status} size="sm" />
+                        </div>
+                        {station.hazard && (
+                          <p className="text-[11px] text-slate-600 mt-1.5 font-medium leading-tight">
+                            <span className="text-slate-400 font-mono">
+                              STATUS:
+                            </span>{' '}
+                            {station.hazard}
+                          </p>
+                        )}
+                        <div className="mt-2.5 pt-2 border-t border-slate-200">
+                          <Link
+                            to={`/cameras?id=${station.id}`}
+                            className="w-full inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded bg-[#1C3F24] hover:bg-[#234E2B] text-white text-xs font-mono font-medium transition-colors"
+                          >
+                            <Camera className="w-3 h-3" />
+                            <span>VIEW FEED →</span>
+                          </Link>
+                        </div>
+                      </div>
+                    </Popup>
+                  </Marker>
+                ))}
+              </MapContainer>
 
-              {/* Search */}
-              <div className="mt-7 relative max-w-xl z-30">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-dark/40" />
+              {/* Bottom telemetry bar */}
+              <div className="absolute bottom-0 left-0 right-0 z-[400] flex items-center justify-between px-3.5 py-2 bg-slate-50/95 backdrop-blur-xs border-t border-slate-200 font-mono text-[11px] text-slate-600">
+                <div className="flex items-center gap-3">
+                  <span className="flex items-center gap-1 font-semibold text-slate-800">
+                    <span className="w-2 h-2 rounded-full bg-[#1C3F24]" />
+                    <span className="text-slate-500">CLEAR:</span> {stats.safe}
+                  </span>
+                  <span className="flex items-center gap-1 font-semibold text-slate-800">
+                    <span className="w-2 h-2 rounded-full bg-[#F0AD4E]" />
+                    <span className="text-slate-500">CAUTION:</span> {stats.caution}
+                  </span>
+                  <span className="flex items-center gap-1 font-semibold text-slate-800">
+                    <span className="w-2 h-2 rounded-full bg-[#D9534F]" />
+                    <span className="text-slate-500">FLOODED:</span> {stats.danger}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* ── RIGHT COLUMN: Clean Editorial Content & Search ── */}
+          <div className="relative flex flex-col justify-center px-6 sm:px-10 lg:px-14 xl:px-20 py-14 lg:py-20">
+            {/* Headline */}
+            <h1 className="font-sans font-semibold tracking-[-0.03em] text-slate-900 text-4xl sm:text-5xl lg:text-[3.5rem] leading-[1.08] max-w-lg">
+              Clear paths when{' '}
+              <span className="text-[#1C3F24]">waters rise.</span>
+            </h1>
+
+            {/* Value proposition */}
+            <p className="mt-6 text-slate-600 text-base leading-relaxed max-w-md">
+              Structured flood intelligence, real-time depth telemetry and
+              safe-path route guidance for Delhi's critical junctions and
+              underpass basins.
+            </p>
+
+            {/* Minimalist search */}
+            <div className="mt-8 relative max-w-md z-30">
+              <div className="relative flex items-center bg-white border border-slate-200 rounded-lg focus-within:ring-2 focus-within:ring-[#1C3F24]/20 focus-within:border-[#1C3F24]/50 transition-all">
+                <div className="pl-3.5 pr-2 text-slate-400 flex items-center gap-1.5">
+                  <Compass className="w-4 h-4 text-slate-400" />
+                  <span className="text-xs font-mono text-slate-200 select-none">
+                    |
+                  </span>
+                </div>
                 <input
                   type="text"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder='Search a Delhi road — e.g. "Minto Bridge", "ITO"'
-                  className="w-full pl-12 pr-4 py-3.5 rounded-xl bg-white border border-sand
-                             text-dark placeholder-dark/40 text-sm
-                             focus:outline-none focus:ring-2 focus:ring-forest/30 focus:border-forest
-                             transition-all shadow-sm"
+                  placeholder='Search corridor or camera ID …'
+                  className="w-full py-3 pr-4 text-sm text-slate-900 placeholder-slate-400 bg-transparent focus:outline-none"
                 />
-                {filtered.length > 0 && (
-                  <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl border border-sand shadow-xl overflow-hidden z-50 max-h-64 overflow-y-auto">
-                    {filtered.map((s) => (
-                      <Link
-                        key={s.id}
-                        to={`/cameras?id=${s.id}`}
-                        className="flex items-center justify-between px-4 py-3 hover:bg-sand/30 transition-colors border-b border-sand/50 last:border-0"
-                      >
-                        <div>
-                          <p className="text-sm font-medium text-dark">{s.name}</p>
-                          <p className="text-xs text-dark/50">{s.hazard}</p>
-                        </div>
-                        <StatusBadge status={s.status} size="sm" />
-                      </Link>
-                    ))}
-                  </div>
+                {search && (
+                  <button
+                    onClick={() => setSearch('')}
+                    className="pr-3 text-xs font-mono text-slate-400 hover:text-slate-700 uppercase"
+                  >
+                    Clear
+                  </button>
                 )}
               </div>
 
-              {/* Stats Cards */}
-              <div className="mt-8 grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {[
-                  {
-                    label: 'Monitored Roads',
-                    value: stats.total,
-                    icon: Radio,
-                    bg: 'bg-dark/5 border-dark/10',
-                    text: 'text-dark',
-                  },
-                  {
-                    label: 'Open & Dry',
-                    value: stats.safe,
-                    icon: ShieldCheck,
-                    bg: 'bg-forest/10 border-forest/20',
-                    text: 'text-forest',
-                  },
-                  {
-                    label: 'Caution',
-                    value: stats.caution,
-                    icon: TriangleAlert,
-                    bg: 'bg-amber/10 border-amber/20',
-                    text: 'text-amber',
-                  },
-                  {
-                    label: 'Impassable',
-                    value: stats.danger,
-                    icon: OctagonX,
-                    bg: 'bg-danger/10 border-danger/20',
-                    text: 'text-danger',
-                  },
-                ].map((pill) => (
-                  <div
-                    key={pill.label}
-                    className={`flex items-center gap-2.5 p-3 rounded-xl border ${pill.bg} transition-transform hover:scale-[1.02] shadow-xs`}
-                  >
-                    <pill.icon className={`w-6 h-6 shrink-0 ${pill.text}`} strokeWidth={1.5} />
-                    <div className="min-w-0">
-                      <p className={`text-xl sm:text-2xl font-bold leading-tight ${pill.text}`}>
-                        {pill.value}
-                      </p>
-                      <p className="text-[11px] text-dark/60 font-medium truncate">
-                        {pill.label}
-                      </p>
-                    </div>
-                  </div>
-                ))}
+              {/* Search results dropdown */}
+              {filtered.length > 0 && (
+                <div className="absolute top-full left-0 right-0 mt-1.5 bg-white rounded-lg border border-slate-200 shadow-xl overflow-hidden z-50 max-h-64 overflow-y-auto divide-y divide-slate-100">
+                  {filtered.map((s) => (
+                    <Link
+                      key={s.id}
+                      to={`/cameras?id=${s.id}`}
+                      className="flex items-center justify-between px-4 py-3 hover:bg-slate-50 transition-colors"
+                    >
+                      <div className="min-w-0 pr-3">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-[10px] text-slate-500 font-semibold uppercase">
+                            {s.id}
+                          </span>
+                          <p className="text-sm font-semibold text-slate-900 truncate">
+                            {s.name}
+                          </p>
+                        </div>
+                        <p className="text-xs text-slate-500 truncate mt-0.5 font-mono">
+                          {s.hazard || 'Clear passage'}
+                        </p>
+                      </div>
+                      <StatusBadge status={s.status} size="sm" />
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* ── STATS ROW: Bottom bar with hairline dividers ── */}
+        <div className="border-t border-slate-200">
+          <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-slate-200">
+            {/* Monitored */}
+            <div className="px-6 sm:px-8 py-5 sm:py-6">
+              <span className="font-mono text-[10px] uppercase tracking-wider text-slate-500 font-medium">
+                Monitored Corridors
+              </span>
+              <div className="flex items-baseline gap-1.5 mt-1">
+                <span className="text-2xl sm:text-3xl font-semibold font-mono text-slate-900 tracking-tight">
+                  {stats.total}
+                </span>
+                <span className="text-[10px] font-mono text-slate-400">
+                  NODES
+                </span>
               </div>
             </div>
 
-            {/* Right Column: Mini-Map Preview Card */}
-            <div className="lg:col-span-5 w-full">
-              <MiniMapPreview stations={stations} />
+            {/* Open & Dry */}
+            <div className="px-6 sm:px-8 py-5 sm:py-6">
+              <span className="font-mono text-[10px] uppercase tracking-wider text-[#1C3F24] font-medium">
+                Open & Dry
+              </span>
+              <div className="flex items-baseline gap-1.5 mt-1">
+                <span className="text-2xl sm:text-3xl font-semibold font-mono text-[#1C3F24] tracking-tight">
+                  {stats.safe}
+                </span>
+                <span className="text-[10px] font-mono text-[#1C3F24]/60">
+                  CLEAR
+                </span>
+              </div>
+            </div>
+
+            {/* Caution */}
+            <div className="px-6 sm:px-8 py-5 sm:py-6 border-t sm:border-t-0 border-slate-200">
+              <span className="font-mono text-[10px] uppercase tracking-wider text-[#F0AD4E] font-medium">
+                Caution
+              </span>
+              <div className="flex items-baseline gap-1.5 mt-1">
+                <span className="text-2xl sm:text-3xl font-semibold font-mono text-[#F0AD4E] tracking-tight">
+                  {stats.caution}
+                </span>
+                <span className="text-[10px] font-mono text-[#F0AD4E]/70">
+                  ELEVATED
+                </span>
+              </div>
+            </div>
+
+            {/* Impassable */}
+            <div className="px-6 sm:px-8 py-5 sm:py-6 border-t sm:border-t-0 border-slate-200">
+              <span className="font-mono text-[10px] uppercase tracking-wider text-[#D9534F] font-medium">
+                Impassable
+              </span>
+              <div className="flex items-baseline gap-1.5 mt-1">
+                <span className="text-2xl sm:text-3xl font-semibold font-mono text-[#D9534F] tracking-tight">
+                  {stats.danger}
+                </span>
+                <span className="text-[10px] font-mono text-[#D9534F]/70">
+                  ALERT
+                </span>
+              </div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Quick nav cards */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-20">
-        <h2 className="text-2xl font-bold text-dark mb-6">Explore FloodLens</h2>
+      {/* ═══════════ MODULES: Quick Nav Grid ═══════════ */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8 pb-4 border-b border-slate-200">
+          <div>
+            <div className="font-mono text-xs uppercase tracking-widest text-slate-500 font-medium mb-1">
+              SUBSYSTEMS // CORE MODULES
+            </div>
+            <h2 className="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900">
+              FloodLens Operational Platform
+            </h2>
+          </div>
+          <div className="font-mono text-xs text-slate-400">
+            [4 ACTIVE MONITORING SUBSYSTEMS]
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-          {navCards.map((card) => (
+          {navModules.map((card) => (
             <Link
               key={card.to}
               to={card.to}
-              className="group flex flex-col p-6 rounded-2xl bg-white border border-sand/60
-                         shadow-sm hover:shadow-lg hover:border-forest/30
-                         transition-all duration-300 hover:-translate-y-1"
+              className="group relative flex flex-col p-6 rounded-xl bg-white border border-slate-200 hover:border-slate-300 hover:shadow-sm transition-all duration-200"
             >
-              <div
-                className={`w-11 h-11 rounded-xl ${card.color} flex items-center justify-center mb-4
-                            transition-transform group-hover:scale-110`}
-              >
-                <card.icon className="w-5 h-5 text-cream" />
+              {/* Module header */}
+              <div className="flex items-center justify-between gap-2 mb-4">
+                <span className="font-mono text-[10px] font-bold text-[#1C3F24] bg-[#1C3F24]/5 border border-[#1C3F24]/15 px-2 py-0.5 rounded">
+                  {card.tag}
+                </span>
+                <span className="font-mono text-xs text-slate-400">
+                  [{card.idx}]
+                </span>
               </div>
-              <h3 className="text-lg font-semibold text-dark mb-1">
-                {card.title}
-              </h3>
-              <p className="text-sm text-dark/50 leading-relaxed flex-1">
+
+              {/* Icon & title */}
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-8 h-8 rounded-md bg-slate-100 border border-slate-200 flex items-center justify-center text-[#1C3F24] group-hover:bg-[#1C3F24] group-hover:text-white transition-colors">
+                  <card.icon className="w-4 h-4" />
+                </div>
+                <h3 className="text-base font-semibold text-slate-900 tracking-tight">
+                  {card.title}
+                </h3>
+              </div>
+
+              <p className="text-xs text-slate-600 leading-relaxed flex-1 mt-2">
                 {card.desc}
               </p>
-              <div className="mt-4 flex items-center gap-1 text-sm font-medium text-forest opacity-0 group-hover:opacity-100 transition-opacity">
-                Explore <ArrowRight className="w-3.5 h-3.5" />
+
+              {/* Footer */}
+              <div className="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-mono font-medium text-slate-600 group-hover:text-[#1C3F24] transition-colors">
+                <span>OPEN MODULE</span>
+                <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
               </div>
             </Link>
           ))}

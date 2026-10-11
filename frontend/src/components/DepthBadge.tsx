@@ -8,9 +8,9 @@ interface Props {
 }
 
 const bgClasses: Record<StationStatus, string> = {
-  safe: 'bg-forest text-cream',
-  caution: 'bg-amber text-dark',
-  danger: 'bg-danger text-cream',
+  safe: 'bg-emerald-500 text-white shadow-xs font-semibold',
+  caution: 'bg-yellow-400 text-slate-900 shadow-xs font-bold',
+  danger: 'bg-rose-500 text-white shadow-xs font-semibold',
 };
 
 export default function DepthBadge({ cm = 0, status, label }: Props) {

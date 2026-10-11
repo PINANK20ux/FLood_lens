@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 
-const STORAGE_KEY = 'floodlens_snapshot_limit';
-const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes in milliseconds
-const MAX_REQUESTS = 2;
+const STORAGE_KEY = 'floodlens_snapshot_limit_v4';
+const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes rolling window
+const MAX_REQUESTS = 3; // 3 snapshots per 15 min
 
 interface StorageData {
   timestamps: number[];

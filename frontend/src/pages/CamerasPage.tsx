@@ -54,11 +54,27 @@ export default function CamerasPage() {
     <div className="page-enter">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-dark">Street Cameras</h1>
-          <p className="mt-2 text-dark/60">
-            Live camera snapshots from monitored junctions across Delhi.
-          </p>
+        <div className="mb-8 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-dark">Street Cameras</h1>
+            <p className="mt-2 text-dark/60">
+              Live camera snapshots from monitored junctions across Delhi with real-time flood depth calculations.
+            </p>
+          </div>
+          <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-white border border-sand shadow-xs self-start md:self-auto">
+            <div className="flex flex-col">
+              <span className="text-[11px] uppercase tracking-wider text-dark/50 font-semibold">Snapshot Allowance</span>
+              <span className="text-sm font-bold text-dark flex items-center gap-1.5">
+                <span className={`w-2.5 h-2.5 rounded-full ${requestsLeft > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+                {requestsLeft} / 3 snapshots left
+              </span>
+            </div>
+            <div className="border-l border-sand/80 pl-3">
+              <span className="text-xs font-mono font-medium px-2 py-1 bg-slate-100 rounded text-dark/70">
+                {requestsLeft > 0 ? 'per 15 min' : formattedCountdown}
+              </span>
+            </div>
+          </div>
         </div>
 
         {/* Filter bar */}

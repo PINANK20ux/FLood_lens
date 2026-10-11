@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Camera, X, AlertCircle, RefreshCw, Video, ShieldCheck, Zap } from 'lucide-react';
-import { uploadWebcamFrame } from '../lib/api';
+import { uploadWebcamFrame, analyzeFloodImage } from '../lib/api';
 import type { CameraStation, StationStatus } from '../types';
 
 interface CameraWebcamModalProps {
@@ -13,6 +13,9 @@ interface CameraWebcamModalProps {
     water_level_cm: number;
     status: StationStatus;
     hazard: string;
+    water_percentage?: number;
+    stranded_people_count?: number;
+    submerged_vehicles_count?: number;
   }) => void;
 }
 
@@ -173,15 +176,54 @@ export default function CameraWebcamModal({
 
         setIsUploading(true);
 
-        // 5. Fast background upload to FastAPI edge telemetry backend
+        // 5. Send frame to two-stream vision analysis and edge telemetry
         try {
-          const response = await uploadWebcamFrame(blob, station.id);
+          // Analyze frame with water segmentation + object detection
+          let analysisResult = null;
+          try {
+            analysisResult = await analyzeFloodImage(blob);
+          } catch (analysisErr) {
+            console.warn('Vision analysis notice:', analysisErr);
+          }
+
+          // Ingest telemetry into backend
+          let edgeResponse = null;
+          try {
+            edgeResponse = await uploadWebcamFrame(blob, station.id);
+          } catch (edgeErr) {
+            console.warn('Edge upload notice:', edgeErr);
+          }
+
+          const waterPct = analysisResult?.water_percentage ?? 0;
+          const mappedStatus: StationStatus =
+            analysisResult?.water_severity === 'Critical' ? 'danger' :
+            analysisResult?.water_severity === 'Moderate' ? 'caution' :
+            (edgeResponse?.mapped_status as StationStatus) || 'safe';
+
+          const mappedDepth =
+            typeof analysisResult?.water_depth_cm === 'number'
+              ? analysisResult.water_depth_cm
+              : waterPct < 2.0
+              ? 0
+              : waterPct <= 15.0
+              ? Math.round(5.0 + (waterPct - 2.0) * (10.0 / 13.0))
+              : waterPct <= 35.0
+              ? Math.round(16.0 + (waterPct - 15.0) * (29.0 / 20.0))
+              : (edgeResponse?.water_level_cm ?? Math.round(48.0 + (waterPct - 35.0) * 1.5));
+
+          const hazardText =
+            analysisResult
+              ? `YOLO AI: ${analysisResult.water_severity} (${waterPct.toFixed(1)}%) | ${analysisResult.stranded_people_count} Stranded, ${analysisResult.submerged_vehicles_count} Submerged`
+              : (edgeResponse?.hazard || 'Live Edge Snapshot');
 
           onCaptureSuccess({
-            image_url: response.image_url,
-            water_level_cm: response.water_level_cm,
-            status: response.mapped_status as StationStatus,
-            hazard: response.hazard,
+            image_url: analysisResult?.annotated_image || edgeResponse?.image_url || localPreviewUrl,
+            water_level_cm: mappedDepth,
+            status: mappedStatus,
+            hazard: hazardText,
+            water_percentage: analysisResult?.water_percentage,
+            stranded_people_count: analysisResult?.stranded_people_count,
+            submerged_vehicles_count: analysisResult?.submerged_vehicles_count,
           });
 
           onClose();
@@ -191,7 +233,7 @@ export default function CameraWebcamModal({
         }
       },
       'image/jpeg',
-      0.75
+      0.80
     );
   };
 

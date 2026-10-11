@@ -53,41 +53,42 @@ export interface RoutePoint {
 
 function makeMarkerIcon(status: CameraStation['status']) {
   const color = STATUS_COLORS[status];
-  const pulseColor = status === 'danger' ? 'rgba(194,65,12,0.4)' : 'transparent';
+  const pulseColor =
+    status === 'danger'
+      ? 'rgba(239, 68, 68, 0.45)'
+      : status === 'caution'
+      ? 'rgba(234, 179, 8, 0.35)'
+      : 'rgba(34, 197, 94, 0.25)';
 
   return L.divIcon({
     className: '',
     html: `
-      <div style="position:relative;width:28px;height:28px;">
-        ${
-          status === 'danger'
-            ? `<div style="position:absolute;inset:-4px;border-radius:50%;background:${pulseColor};animation:pulse-ring 2s ease-out infinite;"></div>`
-            : ''
-        }
+      <div style="position:relative;width:30px;height:30px;">
+        <div style="position:absolute;inset:-4px;border-radius:50%;background:${pulseColor};animation:pulse-ring 2s ease-out infinite;"></div>
         <div style="
-          width:28px;height:28px;border-radius:50%;
+          width:30px;height:30px;border-radius:50%;
           background:${color};
-          border:3px solid #F5EFE3;
-          box-shadow:0 2px 8px rgba(0,0,0,0.25);
+          border:3px solid #FFFFFF;
+          box-shadow:0 2px 10px rgba(0,0,0,0.3);
           display:flex;align-items:center;justify-content:center;
         ">
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="#F5EFE3">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="#FFFFFF">
             <path d="M8 1s-5 6.5-5 10a5 5 0 0 0 10 0C13 7.5 8 1 8 1z"/>
           </svg>
         </div>
       </div>
     `,
-    iconSize: [28, 28],
-    iconAnchor: [14, 14],
-    popupAnchor: [0, -14],
+    iconSize: [30, 30],
+    iconAnchor: [15, 15],
+    popupAnchor: [0, -15],
   });
 }
 
 function makePinIcon(type: 'origin' | 'destination') {
   const isOrigin = type === 'origin';
-  const bgColor = isOrigin ? '#2D5A27' : '#C2410C';
+  const bgColor = isOrigin ? '#22C55E' : '#EF4444';
   const label = isOrigin ? 'A' : 'B';
-  const pulseBg = isOrigin ? 'rgba(45,90,39,0.35)' : 'rgba(194,65,12,0.35)';
+  const pulseBg = isOrigin ? 'rgba(34, 197, 94, 0.4)' : 'rgba(239, 68, 68, 0.4)';
 
   return L.divIcon({
     className: '',
@@ -122,19 +123,19 @@ function makePinIcon(type: 'origin' | 'destination') {
 }
 
 function makeReportMarkerIcon(verified: boolean) {
-  const color = verified ? '#4F5B2A' : '#B8892D';
+  const color = verified ? '#22C55E' : '#EAB308';
   return L.divIcon({
     className: '',
     html: `
       <div style="
         width:20px;height:20px;border-radius:4px;
         background:${color};
-        border:2px solid #F5EFE3;
-        box-shadow:0 1px 4px rgba(0,0,0,0.2);
+        border:2px solid #FFFFFF;
+        box-shadow:0 1px 4px rgba(0,0,0,0.25);
         display:flex;align-items:center;justify-content:center;
         transform:rotate(45deg);
       ">
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="#F5EFE3" style="transform:rotate(-45deg);">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="#FFFFFF" style="transform:rotate(-45deg);">
           <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/>
         </svg>
       </div>
@@ -455,9 +456,9 @@ const SEGMENT_STYLES: Record<
   StationStatus,
   { color: string; weight: number; opacity: number; dashArray?: string }
 > = {
-  safe: { color: '#4F5B2A', weight: 4, opacity: 0.7 },
-  caution: { color: '#B8892D', weight: 5, opacity: 0.75 },
-  danger: { color: '#C2410C', weight: 6, opacity: 0.8, dashArray: '6, 8' },
+  safe: { color: '#22C55E', weight: 4.5, opacity: 0.8 },
+  caution: { color: '#EAB308', weight: 5, opacity: 0.85 },
+  danger: { color: '#EF4444', weight: 6, opacity: 0.9, dashArray: '6, 8' },
 };
 
 /* ─── Main Component ─────────────────────────── */
@@ -536,6 +537,22 @@ export default function MapPage() {
       loadGeometries();
     }
   }, [stations]);
+
+  // Keep selectedStation synced in real time as camera feeds update
+  useEffect(() => {
+    if (selectedStation) {
+      const fresh = stations.find((s) => s.id === selectedStation.id);
+      if (
+        fresh &&
+        (fresh.status !== selectedStation.status ||
+          fresh.water_level_cm !== selectedStation.water_level_cm ||
+          fresh.image_url !== selectedStation.image_url ||
+          fresh.snapshot_url !== selectedStation.snapshot_url)
+      ) {
+        setSelectedStation(fresh);
+      }
+    }
+  }, [stations, selectedStation]);
 
   // Handle map click to pin points
   const handleMapPin = useCallback(
@@ -728,7 +745,7 @@ export default function MapPage() {
             <Polyline
               positions={routeGeometry}
               pathOptions={{
-                color: '#2D5A27',
+                color: '#22C55E',
                 weight: 10,
                 opacity: 0.35,
                 lineCap: 'round',
@@ -739,7 +756,7 @@ export default function MapPage() {
             <Polyline
               positions={routeGeometry}
               pathOptions={{
-                color: '#2D5A27',
+                color: '#16A34A',
                 weight: 6,
                 opacity: 0.95,
                 lineCap: 'round',
@@ -918,6 +935,33 @@ export default function MapPage() {
             </Marker>
           ))}
       </MapContainer>
+
+      {/* Floating Real-Time Road Status & Live CCTV Feeds Legend */}
+      <div className="absolute bottom-6 left-6 z-[1000] bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-sand p-3.5 space-y-2 text-xs">
+        <div className="flex items-center justify-between gap-3 border-b border-sand/60 pb-2">
+          <span className="font-bold text-dark flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+            Live CCTV Cam Feeds
+          </span>
+          <span className="text-[10px] font-mono font-semibold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300">
+            Real-Time Synced
+          </span>
+        </div>
+        <div className="flex items-center gap-4 text-[11px] font-semibold text-dark/80 pt-0.5">
+          <div className="flex items-center gap-1.5">
+            <span className="w-3 h-3 rounded-full bg-[#22C55E] border-2 border-white shadow-xs" />
+            <span>Clear / Safe</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="w-3 h-3 rounded-full bg-[#EAB308] border-2 border-white shadow-xs" />
+            <span>Caution</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="w-3 h-3 rounded-full bg-[#EF4444] border-2 border-white shadow-xs" />
+            <span>Flooded</span>
+          </div>
+        </div>
+      </div>
 
       {/* Floating Active Pinning Mode Banner */}
       {pinningMode && (
@@ -1300,7 +1344,28 @@ export default function MapPage() {
             </div>
 
             {/* Body */}
-            <div className="flex-1 overflow-y-auto p-5 space-y-5">
+            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+              {/* Live CCTV feed preview */}
+              <div className="relative w-full h-44 rounded-xl overflow-hidden bg-slate-900 border border-sand shadow-inner">
+                <img
+                  src={
+                    selectedStation.image_url ||
+                    selectedStation.imageUrl ||
+                    selectedStation.snapshot_url ||
+                    `/test_cameras/cam_${String(((parseInt(selectedStation.id.replace(/\D/g, '') || '1', 10) - 1) % 5) + 1).padStart(2, '0')}.png`
+                  }
+                  alt={selectedStation.name}
+                  className="w-full h-full object-cover"
+                />
+                <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-black/70 backdrop-blur-xs text-[10px] text-cream font-mono">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  LIVE CAMERA FEED
+                </div>
+                <div className="absolute bottom-2 left-2 text-[10px] font-mono text-white/90 bg-black/70 backdrop-blur-xs px-2 py-0.5 rounded">
+                  {selectedStation.id}
+                </div>
+              </div>
+
               <div className="flex items-center gap-3">
                 <StatusBadge status={selectedStation.status} />
                 <DepthBadge
