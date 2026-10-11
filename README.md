@@ -53,6 +53,7 @@ floodlens/
 │   │   ├── services/            # Core business logic:
 │   │   │   ├── router.py              # Flood graph pathfinding & OSRM client
 │   │   │   ├── verifier.py            # Citizen report verification algorithms
+│   │   │   ├── flood_vision_service.py # Dual-stream YOLO segmentation & object detection
 │   │   │   └── water_seg_service.py   # YOLOv8 segmentation & HUD renderer
 │   │   ├── static/              # Edge camera snapshots & static assets
 │   │   ├── weights/             # AI model weights (water_seg.pt)
@@ -69,12 +70,10 @@ floodlens/
 └── frontend/                    # React 19 + TypeScript + Vite Frontend
     ├── public/                  # Static assets & camera preview mocks
     ├── src/
-    │   ├── assets/              # Branding and icons
     │   ├── components/          # Reusable UI components:
     │   │   ├── CameraCard.tsx         # Camera telemetry & snapshot card
     │   │   ├── CameraWebcamModal.tsx  # Edge webcam test simulator
     │   │   ├── DepthBadge.tsx         # Water depth indicator badge
-    │   │   ├── MiniMapPreview.tsx     # Hero live radar preview map
     │   │   ├── Navbar.tsx / Footer    # Navigation & layout chrome
     │   │   └── StatusBadge.tsx        # Standardized status tags
     │   ├── context/             # AuthContext (Emergency Admin session)

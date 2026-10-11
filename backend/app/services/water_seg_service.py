@@ -153,18 +153,16 @@ def _render_visual_overlay(
     annotated = image.copy()
     height, width = annotated.shape[:2]
 
-    # Color definitions in BGR format
+    # Water tint is always vibrant blue (BGR: 235, 145, 30 -> RGB: #1e90ff Dodger Blue)
+    tint_color = (235, 145, 30)
+    contour_color = (255, 210, 60)
+
+    # Color definitions for HUD badges only
     if severity_level == "Critical":
-        tint_color = (36, 40, 235)       # Crimson / Vibrant Red
-        contour_color = (0, 0, 255)      # Pure Red
         badge_bg_color = (36, 40, 215)   # Red badge
     elif severity_level == "Moderate":
-        tint_color = (0, 165, 255)       # Amber / Orange
-        contour_color = (0, 140, 255)    # Orange
         badge_bg_color = (0, 140, 240)   # Orange badge
     else:
-        tint_color = (235, 175, 40)      # Electric Cyan / Flood Blue
-        contour_color = (255, 200, 50)   # Cyan border
         badge_bg_color = (40, 160, 60)   # Green / Safe badge
 
     # 1. Semi-transparent mask overlay (alpha blending over water pixels only)

@@ -15,10 +15,13 @@ frontend/.env
 
 # Node & Frontend dependencies & build outputs
 node_modules/
+frontend/node_modules/
 dist/
+frontend/dist/
 dist-ssr/
 build/
 .vite/
+frontend/.vite/
 .turbo/
 npm-debug.log*
 yarn-debug.log*
@@ -41,6 +44,7 @@ venv/
 env/
 ENV/
 .pytest_cache/
+backend/.pytest_cache/
 .coverage
 htmlcov/
 .mypy_cache/
@@ -48,11 +52,25 @@ htmlcov/
 *.egg-info/
 *.egg
 
+# Database & SQLite files
+*.sqlite
+*.sqlite3
+*.db
+backend/*.db
+backend/*.sqlite3
+
 # ML test outputs & training runs
+test_results/
 backend/test_results/
 runs/
 checkpoints/
 *.pt.backup
+yolov8*.pt
+backend/app/weights/yolov8*.pt
+
+# Dynamic snapshot uploads & test captures
+backend/app/static/snapshots/*.jpg
+!backend/app/static/snapshots/.gitkeep
 
 # Operating System & IDE metadata
 .DS_Store

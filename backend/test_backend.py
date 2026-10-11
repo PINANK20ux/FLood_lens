@@ -167,7 +167,49 @@ async def run_all_tests():
         print(f"    - Duration: {summary['estimated_duration_min']} mins")
         print(f"    - Safety Rating: {summary['safety_rating']}")
         print(f"    - Danger Stations Avoided: {summary['danger_stations_avoided']}")
-        print(f"    - Snapped Road Coordinate Points: {len(coords)}")
+        # -------------------------------------------------------------
+        # 6. Two-Stream Vision Service & /api/cameras/analyze
+        # -------------------------------------------------------------
+        print("\n[TEST 6] Two-Stream Vision Analysis (/api/cameras/analyze)")
+        test_img_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "test_images", "cam_01.png")
+        assert os.path.isfile(test_img_path), f"Test image not found at {test_img_path}"
+
+        with open(test_img_path, "rb") as f:
+            file_bytes = f.read()
+
+        # Test POST /api/cameras/analyze
+        files = {"file": ("cam_01.png", file_bytes, "image/png")}
+        r_analyze = await client.post("/api/cameras/analyze", files=files)
+        assert r_analyze.status_code == 200, f"Analyze failed: {r_analyze.text}"
+        data_analyze = r_analyze.json()
+
+        assert "water_percentage" in data_analyze
+        assert data_analyze["water_severity"] in {"Low", "Moderate", "Critical"}
+        assert "stranded_people_count" in data_analyze
+        assert "submerged_vehicles_count" in data_analyze
+        assert "total_objects_detected" in data_analyze
+        assert data_analyze["annotated_image"].startswith("data:image/jpeg;base64,")
+        assert isinstance(data_analyze["detected_objects"], list)
+
+        print(f"  [OK] /api/cameras/analyze response valid:")
+        print(f"    - Water Coverage: {data_analyze['water_percentage']}% ({data_analyze['water_severity']})")
+        print(f"    - Stranded People: {data_analyze['stranded_people_count']}")
+        print(f"    - Submerged Vehicles: {data_analyze['submerged_vehicles_count']}")
+        print(f"    - Total Objects: {data_analyze['total_objects_detected']}")
+        print(f"    - Annotated Image Data URL length: {len(data_analyze['annotated_image'])}")
+
+        # Test Error Handling: empty file upload
+        empty_files = {"file": ("empty.png", b"", "image/png")}
+        r_empty = await client.post("/api/cameras/analyze", files=empty_files)
+        assert r_empty.status_code == 400, f"Expected 400 for empty file, got {r_empty.status_code}"
+        print(f"  [OK] Error handling validated: empty image correctly returns HTTP 400.")
+
+        # Test Camera Snapshot with Dual-Stream Vision
+        r_snap = await client.post("/api/v1/cameras/CAM-01/snapshot")
+        assert r_snap.status_code == 200, f"Snapshot failed: {r_snap.text}"
+        snap_data = r_snap.json()
+        assert snap_data["annotated_image"].startswith("data:image/jpeg;base64,")
+        print(f"  [OK] Camera snapshot validated: returned dual-stream annotated image ({snap_data['water_percentage']}%).")
 
     print("\n" + "=" * 65)
     print(">> ALL TEST SUITES PASSED PERFECTLY!")

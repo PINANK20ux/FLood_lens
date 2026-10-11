@@ -1,17 +1,75 @@
 import logging
 from pathlib import Path
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, UploadFile, File, Form
 from ..core.database import db
 from ..schemas.cameras import (
     CameraStationResponse,
     CameraStationListResponse,
     CameraSnapshotResponse,
     CameraSnapshotRequest,
+    FloodAnalysisResponse,
 )
+from ..services.flood_vision_service import flood_vision_service
 
 logger = logging.getLogger("floodlens.api.cameras")
 router = APIRouter(prefix="/cameras", tags=["Cameras"])
+
+
+@router.post("/analyze", response_model=FloodAnalysisResponse)
+async def analyze_flood_camera_frame(
+    file: UploadFile = File(..., description="Uploaded snapshot image file for two-stream vision analysis"),
+    camera_id: Optional[str] = Form(None, description="Optional camera station ID to update database telemetry in real-time"),
+):
+    """
+    Two-stream computer vision analysis endpoint:
+    - Runs YOLOv8 water instance segmentation (water_seg.pt)
+    - Runs YOLOv8 target object detector (yolov8n.pt) for civilians, vehicles, boats
+    - Computes water surface coverage %, submersion overlap, and risk categories
+    - Returns translucent blue water overlay with labeled detection boxes and analytics
+    - Automatically updates camera telemetry in real-time if camera_id is provided
+    """
+    try:
+        contents = await file.read()
+        if not contents or len(contents) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Uploaded image file buffer is empty."
+            )
+        result = flood_vision_service.process_image_bytes(contents)
+
+        if camera_id:
+            try:
+                water_depth_cm = float(result.get("water_depth_cm", 0.0))
+                status_category = str(result.get("status", "Clear"))
+                db_status = "danger" if status_category == "Flooded" else ("caution" if status_category == "Caution" else "safe")
+                depth_label = str(result.get("depth_label", "Dry (0 cm)"))
+                water_pct = float(result.get("water_percentage", 0.0))
+                stranded = int(result.get("stranded_people_count", 0))
+                submerged = int(result.get("submerged_vehicles_count", 0))
+                hazard_desc = (
+                    f"YOLO AI: {depth_label} ({water_pct:.1f}%)"
+                    + (f" | {stranded} stranded, {submerged} submerged" if (stranded > 0 or submerged > 0) else "")
+                    if status_category != "Clear" else "None"
+                )
+                await db.update_camera_station_telemetry(
+                    camera_id=camera_id,
+                    water_depth_cm=water_depth_cm,
+                    status=db_status,
+                    hazard=hazard_desc,
+                )
+            except Exception as sync_err:
+                logger.warning(f"Failed to sync telemetry for camera {camera_id}: {sync_err}")
+
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to analyze camera frame: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Neural vision analysis failed: {str(e)}"
+        )
 
 
 @router.get("", response_model=List[CameraStationResponse])
@@ -166,60 +224,55 @@ async def request_camera_snapshot(
                 detail=f"Snapshot source image for camera '{camera_id}' could not be located."
             )
 
-    # 2. Run live YOLOv8 water instance segmentation inference
+    # 2. Run live two-stream YOLO vision inference
     try:
-        seg_res = process_image(image_input=image_source)
+        seg_res = flood_vision_service.process_image_input(image_source)
     except Exception as e:
-        logger.error(f"Water segmentation inference failed for camera {camera_id}: {e}", exc_info=True)
+        logger.error(f"Flood vision inference failed for camera {camera_id}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Neural segmentation inference failed: {str(e)}"
+            detail=f"Neural vision inference failed: {str(e)}"
         )
 
-    water_percentage = float(seg_res["water_surface_percentage"])
+    water_percentage = float(seg_res["water_percentage"])
+    stranded_count = int(seg_res.get("stranded_people_count", 0))
+    submerged_count = int(seg_res.get("submerged_vehicles_count", 0))
+    total_objects = int(seg_res.get("total_objects_detected", 0))
 
-    # 3. Calculate estimated depth label and status category
-    if water_percentage < 5.0:
-        depth_label = "Clear / Safe (0 cm)"
-        status_category = "Clear"
-        db_status = "safe"
-        depth_cm = 0.0
-    elif water_percentage <= 25.0:
-        depth_label = "Ankle Deep (~10-20 cm)"
-        status_category = "Caution"
-        db_status = "caution"
-        depth_cm = 15.0
-    elif water_percentage <= 50.0:
-        depth_label = "Wheel Deep (~30-50 cm)"
-        status_category = "Flooded"
-        db_status = "danger"
-        depth_cm = 40.0
-    else:
-        depth_label = "Submerged / Danger (>60 cm)"
-        status_category = "Flooded"
-        db_status = "danger"
-        depth_cm = 65.0
+    # 3. Dynamic real-time depth and status category directly from vision service
+    water_depth_cm = float(seg_res.get("water_depth_cm", 0.0))
+    depth_label = str(seg_res.get("depth_label", "Dry (0 cm)"))
+    status_category = str(seg_res.get("status", "Clear"))
+    db_status = "danger" if status_category == "Flooded" else ("caution" if status_category == "Caution" else "safe")
 
     # 4. Synchronize telemetry update to database store
     try:
+        hazard_desc = (
+            f"YOLO AI: {depth_label} ({water_percentage:.1f}%)"
+            + (f" | {stranded_count} stranded, {submerged_count} submerged" if (stranded_count > 0 or submerged_count > 0) else "")
+            if status_category != "Clear" else "None"
+        )
         await db.update_camera_station_telemetry(
             camera_id=camera_id,
-            water_depth_cm=depth_cm,
+            water_depth_cm=water_depth_cm,
             status=db_status,
-            hazard=f"YOLO AI: {depth_label} ({water_percentage:.1f}%)" if status_category != "Clear" else "None",
+            hazard=hazard_desc,
         )
     except Exception as db_err:
         logger.warning(f"Could not update database telemetry for {camera_id}: {db_err}")
 
-    # 5. Format base64 annotated image data URL
-    raw_b64 = seg_res.get("overlay_base64", "")
-    annotated_image = f"data:image/jpeg;base64,{raw_b64}"
+    # 5. Annotated image data URL
+    annotated_image = seg_res.get("annotated_image", "")
 
     return {
         "camera_id": camera_id,
         "water_percentage": water_percentage,
+        "water_depth_cm": water_depth_cm,
         "depth_label": depth_label,
         "status": status_category,
         "annotated_image": annotated_image,
         "last_checked": "Just now",
+        "stranded_people_count": stranded_count,
+        "submerged_vehicles_count": submerged_count,
+        "total_objects_detected": total_objects,
     }
